@@ -12,7 +12,6 @@ import (
 	"github.com/willondrik/hoc-spend/pkg/scraper/utils"
 )
 
-
 func OfficerContractExpenses(doc *goquery.Document) ([]types.OfficerContractExpense, error) {
 	mainTable := doc.Find("table").First()
 	if mainTable.Length() == 0 {
