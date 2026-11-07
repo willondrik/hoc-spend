@@ -110,6 +110,7 @@ func MpHospitalityExpenses(doc *goquery.Document) ([]*types.HospitalityExpense, 
 				hospitalityExpense.IsRefunded = hospitalityExpense.IsRefunded || refunded
 			}
 		})
+		hospitalityExpense.CostPerPerson = utils.CostPerPerson(hospitalityExpense.TotalCost, hospitalityExpense.Attendance)
 
 		// Process hidden data
 		hiddenRow := rows.Eq(i + 1)

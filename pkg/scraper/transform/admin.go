@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -51,9 +52,9 @@ func AdminContractExpenses(doc *goquery.Document) ([]types.AdminContractExpense,
 		}
 
 		entries = append(entries, types.AdminContractExpense{
-			Suppliers:            adminParseContractSuppliers(rawSuppliers),
-			Description:          description,
-			ContractPeriod:       adminParseDateRange(rawContractPeriod),
+			Suppliers:             adminParseContractSuppliers(rawSuppliers),
+			Description:           description,
+			ContractPeriod:        adminParseDateRange(rawContractPeriod),
 			OriginalContractValue: originalValue,
 			AmendedContractValue:  amendedValue,
 		})
@@ -61,8 +62,6 @@ func AdminContractExpenses(doc *goquery.Document) ([]types.AdminContractExpense,
 
 	return entries, nil
 }
-
-
 
 // AdministratorExpenditureReports extracts the available quarterly report links
 // from the House Administration proactive disclosure page.
@@ -114,7 +113,7 @@ func AdministratorExpenditureReports(resp *http.Response) (types.ExpenditureRepo
 			FiscalYear:    year,
 			DateRange:     reportRange,
 			FiscalQuarter: quarter,
-			URL:          fullHref,
+			URL:           fullHref,
 		})
 	})
 
@@ -127,7 +126,6 @@ func AdministratorExpenditureReports(resp *http.Response) (types.ExpenditureRepo
 	}
 	return expenditureReports, nil
 }
-
 
 // AdminExpenseUrls extracts the three category URLs from a quarterly
 // house-administration report page.
@@ -162,8 +160,6 @@ func AdminExpenseUrls(resp *http.Response) (types.AdminExpenseURLs, error) {
 		Contract:    expenseUrls[2],
 	}, nil
 }
-
-
 
 func AdminHospitalityExpenses(doc *goquery.Document) ([]types.AdminHospitalityExpense, error) {
 	outer := doc.Find(`table.table.expenses.table-striped[summary*="Hospitality Events"]`)
@@ -216,14 +212,13 @@ func AdminHospitalityExpenses(doc *goquery.Document) ([]types.AdminHospitalityEx
 				entry.Attendance = strings.TrimSpace(p.Text())
 			})
 		}
+		entry.CostPerPerson = utils.CostPerPerson(totalCost, adminAttendance(entry.Attendance))
 
 		entries = append(entries, entry)
 	}
 
 	return entries, nil
 }
-
-
 
 func AdminTravelExpenses(doc *goquery.Document) ([]types.AdminTravelExpense, error) {
 	outer := doc.Find(`table.table.expenses.table-striped[summary*="Travel Events"]`)
@@ -318,9 +313,6 @@ func AdminTravelExpenses(doc *goquery.Document) ([]types.AdminTravelExpense, err
 	return entries, nil
 }
 
-
-
-
 func adminParseDateRange(str string) types.DateRange {
 	remove := []string{"\n", "From"}
 	for _, v := range remove {
@@ -373,6 +365,15 @@ func adminParseSuppliers(suppliers string) []string {
 	}
 	parts := strings.Split(suppliers, ", ")
 	return parts
+}
+
+func adminAttendance(attendance string) int {
+	count, err := strconv.Atoi(strings.TrimSpace(attendance))
+	if err != nil || count <= 0 {
+		return 0
+	}
+
+	return count
 }
 
 func adminFormatToTitleCase(s string) string {

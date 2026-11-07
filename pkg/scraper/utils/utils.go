@@ -60,15 +60,15 @@ func FiscalQuarter(text string) (int, error) {
 // ReportDates extracts the date range from a string
 // and converts it to a DateRange struct
 func ReportDates(text string) (types.DateRange, error) {
-	
+
 	// Split by newlines and get the first line
 	splitText := strings.Split(text, "\n")
 	if len(splitText) == 0 {
 		return types.DateRange{}, fmt.Errorf("invalid text format: no lines found")
 	}
-	
+
 	firstLine := strings.TrimSpace(splitText[0])
-	
+
 	// Try different dash separators
 	var parts []string
 	for _, separator := range []string{" – ", " - "} {
@@ -77,98 +77,98 @@ func ReportDates(text string) (types.DateRange, error) {
 			break
 		}
 	}
-	
+
 	if len(parts) < 2 {
 		// Try to find "From" and "to" pattern
 		if strings.Contains(firstLine, "From") && strings.Contains(firstLine, "to") {
 			fromIndex := strings.Index(firstLine, "From")
 			dateText := firstLine[fromIndex:]
 			dateText = strings.ReplaceAll(dateText, "From ", "")
-			
+
 			dates := strings.Split(dateText, " to ")
 			if len(dates) >= 2 {
 				startDate := strings.TrimSpace(dates[0])
 				endDate := strings.TrimSpace(dates[1])
-				
+
 				// Check if already in Postgres format
 				if IsPostgresDate(startDate) && IsPostgresDate(endDate) {
 					return types.DateRange{
 						StartDate: startDate,
-						EndDate: endDate,
+						EndDate:   endDate,
 					}, nil
 				}
-				
+
 				dateRange := types.DateRange{
 					StartDate: startDate,
 					EndDate:   endDate,
 				}
-				
+
 				formattedDateRange, err := ConvertDateFormat(dateRange)
 				if err != nil {
 					// If conversion fails, return original dates
 					return dateRange, nil
 				}
-				
+
 				return formattedDateRange, nil
 			}
 		}
-		
+
 		return types.DateRange{}, fmt.Errorf("invalid text format: missing date range separator")
 	}
-	
+
 	// Extract the date range part
 	dateRangeStr := strings.TrimSpace(parts[1])
 	dateRangeStr = strings.ReplaceAll(dateRangeStr, "From ", "")
-	
+
 	// Split by "to" to get start and end dates
 	dates := strings.Split(dateRangeStr, " to ")
 	if len(dates) < 2 {
 		return types.DateRange{}, fmt.Errorf("invalid date range format: missing 'to' separator")
 	}
-	
+
 	startDate := strings.TrimSpace(dates[0])
 	endDate := strings.TrimSpace(dates[1])
-	
+
 	// Check if already in Postgres format
 	if IsPostgresDate(startDate) && IsPostgresDate(endDate) {
 		return types.DateRange{
 			StartDate: startDate,
-			EndDate: endDate,
+			EndDate:   endDate,
 		}, nil
 	}
-	
+
 	dateRange := types.DateRange{
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
-	
+
 	formattedDateRange, err := ConvertDateFormat(dateRange)
 	if err != nil {
 		// If conversion fails, return the original dates
 		return dateRange, nil
 	}
-	
+
 	return formattedDateRange, nil
 }
 
 // ReportYear extracts the year from a date range
 func ReportYear(dateRange types.DateRange) (int, error) {
-	
+
 	// Handle empty date
 	if dateRange.StartDate == "" {
 		// Default to current year if date is empty
 		currentYear := time.Now().Year()
 		return currentYear, nil
 	}
-		
+
 	// Check if the date is in Postgres format
 	if IsPostgresDate(dateRange.StartDate) {
 		startDateSplit := strings.Split(dateRange.StartDate, "-")
-		
+
 		if len(startDateSplit) >= 1 {
 			// Handle empty year part
 			yearStr := strings.TrimSpace(startDateSplit[0])
-			
+
 			if yearStr != "" {
 				year, err := strconv.Atoi(yearStr)
 				if err == nil {
@@ -177,7 +177,7 @@ func ReportYear(dateRange types.DateRange) (int, error) {
 			}
 		}
 	}
-	
+
 	// If year cannot be extracted, try to parse it as a full date
 	for _, format := range []string{
 		"2006-01-02",
@@ -191,12 +191,11 @@ func ReportYear(dateRange types.DateRange) (int, error) {
 			return year, nil
 		}
 	}
-	
+
 	// If all fails, use the current year
 	currentYear := time.Now().Year()
 	return currentYear, nil
 }
-
 
 // IsWaterCrossing checks if the trip between two cities involves crossing a body of water
 // This is used to identify trips that would be flights despite being short distances
@@ -206,23 +205,23 @@ func IsWaterCrossing(departureCity, destinationCity string) bool {
 		// Vancouver to Victoria (across the Strait of Georgia)
 		"Vancouver_Victoria": true,
 		"Victoria_Vancouver": true,
-		
+
 		// Charlottetown (PEI) to Halifax (NS) - across water
 		"Charlottetown_Halifax": true,
 		"Halifax_Charlottetown": true,
-		
+
 		// Sydney (NS) to St. John's (NL) - across the Cabot Strait
 		"Sydney_St. John's": true,
 		"St. John's_Sydney": true,
-		
+
 		// Moncton (NB) to Charlottetown (PEI) - short distance but across water
 		"Moncton_Charlottetown": true,
 		"Charlottetown_Moncton": true,
 	}
-	
+
 	// Create a key for the city pair
 	cityPair := fmt.Sprintf("%s_%s", departureCity, destinationCity)
-	
+
 	// Check if this pair is in our water crossing map
 	return waterCrossingPairs[cityPair]
 }
@@ -249,12 +248,12 @@ func IsFlightWithDistance(flightPoints types.FlightPoints, departureCity, destin
 		}
 		return true
 	}
-	
+
 	// If no flight points but it's a long distance or a water crossing, it's likely a flight
 	if distanceKm >= 300 || IsWaterCrossing(departureCity, destinationCity) {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -292,13 +291,13 @@ func WriteFlightErrorsToFile(errorMsgs []string) error {
 }
 
 // UpdateVacantNames updates the names of MPs with "Vacant" in their name
-// Unique constraints in the database prevent duplicates, 
+// Unique constraints in the database prevent duplicates,
 // and this function ensures that the name is unique by appending the constituency
 func UpdateVacantNames(name types.PersonName, constituency string) types.PersonName {
 	if name.FirstName == "Vacant" || name.LastName == "Vacant" {
 		return types.PersonName{
 			FirstName: fmt.Sprintf("%s - %s", name.FirstName, constituency),
-			LastName: fmt.Sprintf("%s - %s", name.LastName, constituency),
+			LastName:  fmt.Sprintf("%s - %s", name.LastName, constituency),
 		}
 	}
 	return name
@@ -324,7 +323,7 @@ func Name(fullName string, mp *types.MPExpenseSummary) {
 		} else {
 			formattedStr = fullName
 		}
-		
+
 		// Check if the name contains a comma before splitting
 		if strings.Contains(formattedStr, ", ") {
 			names := strings.Split(formattedStr, ", ")
@@ -339,7 +338,7 @@ func Name(fullName string, mp *types.MPExpenseSummary) {
 	}
 	mp.Name = types.PersonName{
 		FirstName: firstName,
-		LastName: lastName,
+		LastName:  lastName,
 	}
 }
 
@@ -377,12 +376,22 @@ func TravellerNameAndType(travellerDetails string) (string, types.PersonName) {
 	}
 }
 
-
 // ExpenseToDecimal converts a string representation of an expense to a Money value.
 // It preserves existing behaviour and is a thin wrapper over ExpenseToDecimalWithRefundFlag.
 func ExpenseToDecimal(expenseTotal string) (types.Money, error) {
 	amount, _, err := ExpenseToDecimalWithRefundFlag(expenseTotal)
 	return amount, err
+}
+
+// CostPerPerson returns a hospitality event's total cost divided by its
+// attendance, rounded to cents. A non-positive attendance has no meaningful
+// per-person cost, so it returns zero.
+func CostPerPerson(totalCost types.Money, attendance int) types.Money {
+	if attendance <= 0 {
+		return decimal.Zero
+	}
+
+	return totalCost.Div(decimal.NewFromInt(int64(attendance))).Round(2)
 }
 
 // ExpenseToDecimalWithRefundFlag parses currency strings and also returns a boolean
@@ -494,16 +503,15 @@ func StringToDateRange(dateStr string) (types.DateRange, error) {
 	}, nil
 }
 
-
 // FlightPointsToFloat converts a string representation of flight points to a float64
 func FlightPointsToFloat(flightPoints string) (float64, error) {
-	
+
 	// Handle empty strings
 	flightPoints = strings.TrimSpace(flightPoints)
 	if flightPoints == "" {
 		return 0, nil
 	}
-	
+
 	pointsFloat, err := strconv.ParseFloat(flightPoints, 64)
 	if err != nil {
 		return -1, fmt.Errorf("Failed to parse string: %s\nError: %v", flightPoints, err)
@@ -526,7 +534,7 @@ func TravellerName(name string) types.PersonName {
 			LastName:  "Not Listed",
 		}
 	}
-	
+
 	// Check if the name contains a comma before splitting
 	if strings.Contains(name, ", ") {
 		nameArr := strings.Split(name, ", ")
@@ -553,7 +561,7 @@ func City(cityName string) string {
 	if cityName == "" {
 		return "Not Provided"
 	}
-	
+
 	cityName = strings.ToLower(cityName)
 	runes := []rune(cityName)
 	if len(runes) > 0 {
@@ -588,7 +596,7 @@ func EventType(text string) string {
 // ConvertDateFormat converts a date string from "January 2, 2006" to "2006-01-02"
 // Convert date string into PSQL format
 func ConvertDateFormat(dateRange types.DateRange) (types.DateRange, error) {
-	
+
 	// Must use same date structure in the new format
 	// This ensures that the input format can be formatted correctly
 	const inputFormat = "January 2, 2006"
@@ -603,10 +611,10 @@ func ConvertDateFormat(dateRange types.DateRange) (types.DateRange, error) {
 	if err != nil {
 		return types.DateRange{}, err
 	}
-		
+
 	return types.DateRange{
 		StartDate: formattedStartDate.Format(newFormat),
-		EndDate: formattedEndDate.Format(newFormat),
+		EndDate:   formattedEndDate.Format(newFormat),
 	}, nil
 }
 
@@ -622,7 +630,7 @@ func IsTripCancelled(travelPurpose string) bool {
 func HandleCancelledTrip(traveller *types.Traveller, dates types.DateRange) {
 	// Set date to empty string if dates.StartDate is "Not Provided"
 	if dates.StartDate == "Not Provided" {
-		traveller.Date = ""  // This will be converted to NULL in the database
+		traveller.Date = "" // This will be converted to NULL in the database
 	} else {
 		traveller.Date = dates.StartDate
 	}
@@ -645,7 +653,7 @@ func IsLoungeVisit(travelPurpose string) bool {
 func HandleLoungeVisit(traveller *types.Traveller, dates types.DateRange) {
 	// Set date to empty string if dates.StartDate is "Not Provided"
 	if dates.StartDate == "Not Provided" {
-		traveller.Date = ""  // This will be converted to NULL in the database
+		traveller.Date = "" // This will be converted to NULL in the database
 	} else {
 		traveller.Date = dates.StartDate
 	}
@@ -662,7 +670,7 @@ func CityName(city string) string {
 	if strings.Contains(city, "montréal, qc") || strings.Contains(city, "montréal") {
 		return "Montreal"
 	}
-	
+
 	var formatted []rune
 	insideParen := false
 
@@ -690,7 +698,6 @@ func IsPostgresDate(dateStr string) bool {
 	_, err := time.Parse("2006-01-02", dateStr)
 	return err == nil
 }
-
 
 func ReadTravelErrors() (map[string]int, error) {
 	locationErrMap := make(map[string]int)
@@ -720,7 +727,7 @@ func processTravelErr(line string) string {
 
 	locationErr := splitLine[4]
 	splitErr := strings.Split(locationErr, "for ")
-	
+
 	location := splitErr[1]
 	return location
 }

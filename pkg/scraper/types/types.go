@@ -306,11 +306,12 @@ type AdminHospitalityExpenseCollection struct {
 }
 
 type AdminHospitalityExpense struct {
-	EventID   string
-	Host      string
-	Purpose   string
-	Date      string
-	TotalCost Money
+	EventID       string
+	Host          string
+	Purpose       string
+	Date          string
+	TotalCost     Money
+	CostPerPerson Money
 
 	Location   string
 	Suppliers  []string
@@ -400,6 +401,7 @@ type OfficerHospitalityExpense struct {
 	TotalAttendance int               `json:"totalAttendance"`
 	Purpose         string            `json:"purpose"`
 	TotalCost       Money             `json:"totalCost"`
+	CostPerPerson   Money             `json:"costPerPerson"`
 	Suppliers       []OfficerSupplier `json:"suppliers"`
 }
 
@@ -430,13 +432,14 @@ type ContractExpense struct {
 }
 
 type HospitalityExpense struct {
-	Date       string
-	Location   string
-	Attendance int
-	Purpose    string
-	Event      HospitalityEvent
-	TotalCost  Money
-	IsRefunded bool `json:"isRefunded,omitempty"`
+	Date          string
+	Location      string
+	Attendance    int
+	Purpose       string
+	Event         HospitalityEvent
+	TotalCost     Money
+	CostPerPerson Money `json:"costPerPerson"`
+	IsRefunded    bool  `json:"isRefunded,omitempty"`
 }
 
 type HospitalityEvent struct {

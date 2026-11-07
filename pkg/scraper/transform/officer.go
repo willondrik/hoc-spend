@@ -38,7 +38,7 @@ func OfficerContractExpenses(doc *goquery.Document) ([]types.OfficerContractExpe
 		date := strings.TrimSpace(cells.Eq(2).Text())
 		totalRaw := strings.TrimSpace(cells.Eq(3).Text())
 
-	totalCost, err := utils.ExpenseToDecimal(totalRaw)
+		totalCost, err := utils.ExpenseToDecimal(totalRaw)
 		if err != nil {
 			return nil, err
 		}
@@ -53,7 +53,6 @@ func OfficerContractExpenses(doc *goquery.Document) ([]types.OfficerContractExpe
 
 	return entries, nil
 }
-
 
 // OfficerExpenditureReports extracts the available quarterly report links from
 // the House Officers proactive disclosure page.
@@ -105,7 +104,7 @@ func OfficerExpenditureReports(resp *http.Response) (types.ExpenditureReports, e
 			FiscalYear:    year,
 			DateRange:     reportRange,
 			FiscalQuarter: quarter,
-			URL:          fullHref,
+			URL:           fullHref,
 		})
 	})
 
@@ -118,8 +117,6 @@ func OfficerExpenditureReports(resp *http.Response) (types.ExpenditureReports, e
 	}
 	return expenditureReports, nil
 }
-
-
 
 func OfficerHospitalityExpenses(doc *goquery.Document) ([]types.OfficerHospitalityExpense, error) {
 	main := doc.Find("table").First()
@@ -153,7 +150,7 @@ func OfficerHospitalityExpenses(doc *goquery.Document) ([]types.OfficerHospitali
 			}
 		}
 
-	totalCost, err := utils.ExpenseToDecimal(totalRaw)
+		totalCost, err := utils.ExpenseToDecimal(totalRaw)
 		if err != nil {
 			return nil, err
 		}
@@ -185,14 +182,13 @@ func OfficerHospitalityExpenses(doc *goquery.Document) ([]types.OfficerHospitali
 			TotalAttendance: attendance,
 			Purpose:         purpose,
 			TotalCost:       totalCost,
+			CostPerPerson:   utils.CostPerPerson(totalCost, attendance),
 			Suppliers:       suppliers,
 		})
 	}
 
 	return entries, nil
 }
-
-
 
 func OfficerTravelExpenses(doc *goquery.Document) ([]types.OfficerTravelExpense, error) {
 	// Prefer a table under the common expenses classes, fall back to first table.
@@ -227,19 +223,19 @@ func OfficerTravelExpenses(doc *goquery.Document) ([]types.OfficerTravelExpense,
 		mealsRaw := strings.TrimSpace(mainCells.Eq(5).Text())
 		totalRaw := strings.TrimSpace(mainCells.Eq(6).Text())
 
-	transportation, err := utils.ExpenseToDecimal(transportationRaw)
+		transportation, err := utils.ExpenseToDecimal(transportationRaw)
 		if err != nil {
 			return nil, err
 		}
-	accommodation, err := utils.ExpenseToDecimal(accommodationRaw)
+		accommodation, err := utils.ExpenseToDecimal(accommodationRaw)
 		if err != nil {
 			return nil, err
 		}
-	meals, err := utils.ExpenseToDecimal(mealsRaw)
+		meals, err := utils.ExpenseToDecimal(mealsRaw)
 		if err != nil {
 			return nil, err
 		}
-	total, err := utils.ExpenseToDecimal(totalRaw)
+		total, err := utils.ExpenseToDecimal(totalRaw)
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +261,7 @@ func OfficerTravelExpenses(doc *goquery.Document) ([]types.OfficerTravelExpense,
 		}
 
 		entries = append(entries, types.OfficerTravelExpense{
-			Period:             period,
+			Period:              period,
 			DepartureCity:       departureCity,
 			PlacesVisited:       parsePlacesVisited(placesVisitedRaw),
 			TransportationCost:  transportation,
@@ -279,8 +275,6 @@ func OfficerTravelExpenses(doc *goquery.Document) ([]types.OfficerTravelExpense,
 
 	return entries, nil
 }
-
-
 
 func Officers(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, fiscalQuarter int) ([]*types.OfficerExpenseSummary, error) {
 	var officers []*types.OfficerExpenseSummary
@@ -306,16 +300,16 @@ func Officers(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, 
 		caucus := strings.TrimSpace(cells.Eq(2).Text())
 
 		salaryRaw := strings.TrimSpace(cells.Eq(3).Text())
-	salary, err := utils.ExpenseToDecimal(salaryRaw)
+		salary, err := utils.ExpenseToDecimal(salaryRaw)
 		if err != nil {
 			parseErr = err
 			return
 		}
 
-	// Keep the text before stripping links; some tables place the amount inside the anchor.
-	travelCell := cells.Eq(4)
-	travelTotalRaw := strings.TrimSpace(travelCell.Text())
-	travelTotal, err := utils.ExpenseToDecimal(travelTotalRaw)
+		// Keep the text before stripping links; some tables place the amount inside the anchor.
+		travelCell := cells.Eq(4)
+		travelTotalRaw := strings.TrimSpace(travelCell.Text())
+		travelTotal, err := utils.ExpenseToDecimal(travelTotalRaw)
 		if err != nil {
 			parseErr = err
 			return
@@ -325,10 +319,10 @@ func Officers(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, 
 			travelHref = fmt.Sprintf("https://www.ourcommons.ca%s", strings.TrimSpace(travelHref))
 		}
 
-	// Hospitality: same—text may be inside the link.
-	hospCell := cells.Eq(5)
-	hospTotalRaw := strings.TrimSpace(hospCell.Text())
-	hospTotal, err := utils.ExpenseToDecimal(hospTotalRaw)
+		// Hospitality: same—text may be inside the link.
+		hospCell := cells.Eq(5)
+		hospTotalRaw := strings.TrimSpace(hospCell.Text())
+		hospTotal, err := utils.ExpenseToDecimal(hospTotalRaw)
 		if err != nil {
 			parseErr = err
 			return
@@ -338,10 +332,10 @@ func Officers(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, 
 			hospHref = fmt.Sprintf("https://www.ourcommons.ca%s", strings.TrimSpace(hospHref))
 		}
 
-	// Contract: keep text before link removal as well.
-	contractCell := cells.Eq(6)
-	contractTotalRaw := strings.TrimSpace(contractCell.Text())
-	contractTotal, err := utils.ExpenseToDecimal(contractTotalRaw)
+		// Contract: keep text before link removal as well.
+		contractCell := cells.Eq(6)
+		contractTotalRaw := strings.TrimSpace(contractCell.Text())
+		contractTotal, err := utils.ExpenseToDecimal(contractTotalRaw)
 		if err != nil {
 			parseErr = err
 			return
@@ -352,17 +346,17 @@ func Officers(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, 
 		}
 
 		officers = append(officers, &types.OfficerExpenseSummary{
-			Name:   name,
-			Role:   role,
-			Caucus: caucus,
-			Salaries: salary,
-			TravelExpenses: types.ExpenseCategory{TotalAmount: travelTotal, URL: travelHref},
+			Name:                name,
+			Role:                role,
+			Caucus:              caucus,
+			Salaries:            salary,
+			TravelExpenses:      types.ExpenseCategory{TotalAmount: travelTotal, URL: travelHref},
 			HospitalityExpenses: types.ExpenseCategory{TotalAmount: hospTotal, URL: hospHref},
-			ContractExpenses: types.ExpenseCategory{TotalAmount: contractTotal, URL: contractHref},
-			ReportingPeriod:         dateRange,
-			FiscalYear:    fiscalYear,
-			FiscalQuarter: fiscalQuarter,
-			URL:           "",
+			ContractExpenses:    types.ExpenseCategory{TotalAmount: contractTotal, URL: contractHref},
+			ReportingPeriod:     dateRange,
+			FiscalYear:          fiscalYear,
+			FiscalQuarter:       fiscalQuarter,
+			URL:                 "",
 		})
 	})
 
