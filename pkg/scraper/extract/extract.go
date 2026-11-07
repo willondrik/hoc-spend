@@ -67,7 +67,7 @@ func (s *ExtractSvc) MpProfileUrl() (*http.Response, error) {
 }
 
 // Returns a Member of Parliament's profile data
-func (s *ExtractSvc) MpProfile(name types.Name) (*http.Response, error) {
+func (s *ExtractSvc) MpProfile(name types.PersonName) (*http.Response, error) {
 	searchText := url.QueryEscape(fmt.Sprintf("%s %s", name.FirstName, name.LastName))
 	url := fmt.Sprintf("https://www.ourcommons.ca/Members/en/search?searchText=%s&parliament=all", searchText)
 
@@ -80,7 +80,7 @@ func (s *ExtractSvc) MpProfile(name types.Name) (*http.Response, error) {
 }
 
 // Returns raw Members of Parliament spending data
-func (s *ExtractSvc) AllMpExpenses(h types.Hrefs) (*types.RawExpenses, error) {
+func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseResponses, error) {
 	var (
 		wg sync.WaitGroup
 		mu sync.Mutex
@@ -137,7 +137,7 @@ func (s *ExtractSvc) AllMpExpenses(h types.Hrefs) (*types.RawExpenses, error) {
 		return nil, fmt.Errorf("[EXTRACTION FAILED] %v", errs)
 	}
 
-	return &types.RawExpenses{
+	return &types.RawExpenseResponses{
 		Contract: contract,
 		Hospitality: hospitality,
 		Travel: travel,

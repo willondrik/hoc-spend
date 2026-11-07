@@ -13,9 +13,13 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/willondrik/hoc-spend/pkg/scraper/constants"
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 	"github.com/willondrik/hoc-spend/pkg/scraper/utils"
+)
+
+const (
+	airTransportation    = "Air"
+	groundTransportation = "Ground"
 )
 
 // MpContractExpenses parses the contract expenses from the MP Contract expenses page
@@ -28,7 +32,7 @@ func MpContractExpenses(doc *goquery.Document) ([]*types.ContractExpense, error)
 		row.Find("td").Each(func(j int, cell *goquery.Selection) {
 			text := strings.TrimSpace(cell.Text())
 
-		switch j {
+			switch j {
 			case 0:
 				contractExpense.Supplier = utils.NormalizeSupplierName(text)
 			case 1:
@@ -36,13 +40,13 @@ func MpContractExpenses(doc *goquery.Document) ([]*types.ContractExpense, error)
 			case 2:
 				contractExpense.Date = text
 			case 3:
-			expense, refunded, err := utils.ExpenseToDecimalWithRefundFlag(text)
+				expense, refunded, err := utils.ExpenseToDecimalWithRefundFlag(text)
 				if err != nil {
 					parseErr = err
 					break
 				}
 				contractExpense.Total = expense
-			contractExpense.IsRefunded = contractExpense.IsRefunded || refunded
+				contractExpense.IsRefunded = contractExpense.IsRefunded || refunded
 			}
 		})
 		contractExpenses = append(contractExpenses, contractExpense)
@@ -50,8 +54,6 @@ func MpContractExpenses(doc *goquery.Document) ([]*types.ContractExpense, error)
 
 	return contractExpenses, parseErr
 }
-
-
 
 func MpHospitalityExpenses(doc *goquery.Document) ([]*types.HospitalityExpense, error) {
 	var hospitalityExpenses []*types.HospitalityExpense
@@ -75,7 +77,6 @@ func MpHospitalityExpenses(doc *goquery.Document) ([]*types.HospitalityExpense, 
 			fmt.Println("Hospitality expenses outer row: ", row.Length())
 			fmt.Println("outer row text:", row.Text())
 		}
-		
 
 		hospitalityExpense := &types.HospitalityExpense{}
 		row.Find("td").Each(func(j int, cell *goquery.Selection) {
@@ -116,7 +117,6 @@ func MpHospitalityExpenses(doc *goquery.Document) ([]*types.HospitalityExpense, 
 			fmt.Println("Hospitality inner row length: ", hiddenRow.Length())
 			fmt.Println("inner row text:", hiddenRow.Text())
 		}
-		
 
 		// Retrieve Event type
 		eventType := hiddenRow.Find(".col-md-4").Text()
@@ -128,7 +128,7 @@ func MpHospitalityExpenses(doc *goquery.Document) ([]*types.HospitalityExpense, 
 				fmt.Println("Hospitality inner row length: ", nestedRow.Length())
 				fmt.Println("inner row text:", nestedRow.Text())
 			}
-		
+
 			var expenseEntry types.ExpenseItem
 			nestedRow.Find("td").Each(func(l int, cell *goquery.Selection) {
 				text := strings.TrimSpace(cell.Text())
@@ -137,15 +137,15 @@ func MpHospitalityExpenses(doc *goquery.Document) ([]*types.HospitalityExpense, 
 					expenseEntry.Claim = text
 				case 1:
 					expenseEntry.Supplier = utils.NormalizeSupplierName(text)
-			case 2:
-				// Costs can be refunds/negatives (e.g. "($40.00)") so parse with refund flag.
-				expense, refunded, err := utils.ExpenseToDecimalWithRefundFlag(text)
-				if err != nil {
-					parseErr = err
-					return
-				}
-				expenseEntry.Cost = expense
-				hospitalityExpense.IsRefunded = hospitalityExpense.IsRefunded || refunded
+				case 2:
+					// Costs can be refunds/negatives (e.g. "($40.00)") so parse with refund flag.
+					expense, refunded, err := utils.ExpenseToDecimalWithRefundFlag(text)
+					if err != nil {
+						parseErr = err
+						return
+					}
+					expenseEntry.Cost = expense
+					hospitalityExpense.IsRefunded = hospitalityExpense.IsRefunded || refunded
 				}
 			})
 			if expenseEntry.Claim == "" || expenseEntry.Cost.IsZero() || expenseEntry.Supplier == "" {
@@ -167,8 +167,8 @@ func WriteErrs(expenses []*types.HospitalityExpense) error {
 
 	var expenseStrings []string
 	for _, expense := range expenses {
-		expenseStr := fmt.Sprintf("Date: %s, Location: %s, Purpose: %s, Total Cost: %.2f", 
-			expense.Date, expense.Location, expense.Purpose, expense.TotalCost)
+		expenseStr := fmt.Sprintf("Date: %s, Location: %s, Purpose: %s, Total Cost: %s",
+			expense.Date, expense.Location, expense.Purpose, expense.TotalCost.StringFixed(2))
 		expenseStrings = append(expenseStrings, expenseStr)
 	}
 
@@ -195,7 +195,6 @@ func WriteErrs(expenses []*types.HospitalityExpense) error {
 	return nil
 }
 
-
 func MpExpenditureReports(resp *http.Response) (types.ExpenditureReports, error) {
 	var expenditureReports types.ExpenditureReports
 	var errs []error
@@ -204,7 +203,6 @@ func MpExpenditureReports(resp *http.Response) (types.ExpenditureReports, error)
 	if err != nil {
 		return expenditureReports, fmt.Errorf("[GOQUERY FAILED] %s", err)
 	}
-
 
 	totalReports := 0
 	doc.Find("a.quarter").Each(func(i int, s *goquery.Selection) {
@@ -221,7 +219,7 @@ func MpExpenditureReports(resp *http.Response) (types.ExpenditureReports, error)
 
 			reportRange, err := utils.ReportDates(dateRange)
 			if err != nil {
-				errs = append(errs,fmt.Errorf("Report DateRange error: %s", err))
+				errs = append(errs, fmt.Errorf("Report DateRange error: %s", err))
 				return
 			}
 
@@ -238,10 +236,10 @@ func MpExpenditureReports(resp *http.Response) (types.ExpenditureReports, error)
 			}
 
 			expenditureReport := types.ExpenditureReport{
-				FiscalYear: year,
-				DateRange: reportRange,
+				FiscalYear:    year,
+				DateRange:     reportRange,
 				FiscalQuarter: quarter,
-				URL: fullHref,
+				URL:           fullHref,
 			}
 
 			expenditureReports.Reports = append(expenditureReports.Reports, expenditureReport)
@@ -251,7 +249,7 @@ func MpExpenditureReports(resp *http.Response) (types.ExpenditureReports, error)
 	if len(errs) > 0 {
 		return expenditureReports, errs[0]
 	}
-	
+
 	if totalReports == len(expenditureReports.Reports) {
 		log.Printf("All available reports extracted\n\n")
 	}
@@ -353,31 +351,29 @@ func GetProfile(resp *http.Response, url string) (*types.MPDetails, error) {
 
 	contact.Name = name
 
-
 	// Check for errors from goroutines
 	if len(errs) > 0 {
 		// Log errors but continue with default values
 		for _, err := range errs {
 			fmt.Printf("[WARNING] Error during profile extraction: %v\n", err)
 		}
-		
+
 		// Set default values for any missing data
 		if roles == nil {
 			fmt.Println("[WARNING] Setting default roles due to error")
 			roles = []string{"Member of Parliament"}
 		}
-		
+
 		if province == "" {
 			fmt.Println("[WARNING] Setting default province due to error")
 			province = "Unknown"
 		}
-		
+
 		if imgData == nil {
 			fmt.Println("[WARNING] Setting empty avatar due to error")
 			imgData = []byte{}
 		}
 	}
-
 
 	fmt.Println("-----------------")
 	fmt.Printf("First name: %s\t Last name: %s\n", name.FirstName, name.LastName)
@@ -388,15 +384,14 @@ func GetProfile(resp *http.Response, url string) (*types.MPDetails, error) {
 	fmt.Println("-----------------")
 
 	return &types.MPDetails{
-		Name:     name,
-		Province: province,
-		Contact:  contact,
-		Roles:    roles,
-		Avatar:   imgData,
+		Name:       name,
+		Province:   province,
+		Contact:    contact,
+		Roles:      roles,
+		Avatar:     imgData,
 		ProfileURL: url,
 	}, nil
 }
-
 
 func GetUrls(resp *http.Response) ([]string, error) {
 	var mpUrls []string
@@ -446,19 +441,19 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 	var contact types.MPContactInfo
 	c := s.Find("#contact")
 
-	// Hill Office	
+	// Hill Office
 	hillOffice := types.OfficeAddress{
 		Institution: "House of Commons",
-		City: "Ottawa",
-		Province: "Ontario",
-		Country: "Canada",
-		PostalCode: "K1A 0A6",
+		City:        "Ottawa",
+		Province:    "Ontario",
+		Country:     "Canada",
+		PostalCode:  "K1A 0A6",
 		Description: "Mail may be sent postage-free to any member of Parliament",
 	}
 
 	// Extract Email and Website
 	// Extract Hill Office
-	c.Find("p").Each(func(i int, s *goquery.Selection){
+	c.Find("p").Each(func(i int, s *goquery.Selection) {
 
 		text := strings.TrimSpace(s.Text())
 		switch i {
@@ -473,7 +468,7 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 
 			hillOffice.PhoneNumber = phone
 			hillOffice.FaxNumber = fax
-		default: 
+		default:
 			return
 		}
 	})
@@ -481,18 +476,18 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 
 	// Constituency Office
 	var constituencyOffice types.OfficeAddress
-	var processedOffice bool = false  // Flag to track if we've processed an office
-	
+	var processedOffice bool = false // Flag to track if we've processed an office
+
 	mainOffice := c.Find(".ce-mip-contact-constituency-office")
 	mainOffice.Find("p").Each(func(j int, s *goquery.Selection) {
 		// Skip if we've already processed an office
 		if processedOffice {
-		//	fmt.Println("[SKIPPING] Already processed one constituency office.")
+			//	fmt.Println("[SKIPPING] Already processed one constituency office.")
 			return
 		}
 
 		addrSplit := strings.Split(strings.TrimSpace(s.Text()), "\n")
-		
+
 		switch j {
 		case 0:
 			constituencyOffice.Name = addrSplit[0]
@@ -507,7 +502,7 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 			// Add debug information
 			fmt.Printf("Location: %s\n", location)
 			fmt.Printf("Location Split: %+v\n", locationSplit)
-			
+
 			// Check if we have enough elements in locationSplit
 			if len(locationSplit) > 0 {
 				constituencyOffice.City = string(locationSplit[0])
@@ -515,20 +510,20 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 				constituencyOffice.City = "Unknown"
 				fmt.Println("Warning: Could not extract city from location")
 			}
-			
+
 			if len(locationSplit) > 1 {
 				constituencyOffice.Province = string(locationSplit[1])
 			} else {
 				constituencyOffice.Province = "Unknown"
 				fmt.Println("Warning: Could not extract province from location")
 			}
-			
+
 			constituencyOffice.Country = "Canada"
 		case 1:
 			phone, fax := GetPhoneAndFax(s)
 			constituencyOffice.PhoneNumber = phone
 			constituencyOffice.FaxNumber = fax
-			
+
 			// Mark that we've processed one complete office after getting phone/fax
 			if constituencyOffice.Name != "" {
 				processedOffice = true
@@ -538,60 +533,59 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 	})
 	contact.ConstituencyOffice = constituencyOffice
 
-
 	// Check for empty fields in the Contact struct and its nested structs
 	isEmpty, errMsg := IsEmptyFields(reflect.ValueOf(contact), "Contact")
 	if isEmpty && errMsg != "" {
 		fmt.Printf("Warning: %s - Using default values where possible\n", errMsg)
-		
+
 		// Set default values for empty fields
 		if contact.Email == "" {
 			contact.Email = "not.provided@example.com"
 			fmt.Println("Set default email")
 		}
-		
+
 		if contact.Website == "" {
 			contact.Website = "https://www.ourcommons.ca"
 			fmt.Println("Set default website")
 		}
-		
+
 		// Check and set defaults for Hill Office
 		if contact.HillOffice.PhoneNumber == "" {
 			contact.HillOffice.PhoneNumber = "613-992-0000"
 			fmt.Println("Set default Hill Office phone number")
 		}
-		
+
 		if contact.HillOffice.FaxNumber == "" {
 			contact.HillOffice.FaxNumber = "613-992-0000"
 			fmt.Println("Set default Hill Office fax")
 		}
-		
+
 		// Check and set defaults for Constituency Office
 		if contact.ConstituencyOffice.Name == "" {
 			contact.ConstituencyOffice.Name = "Main Office"
 			fmt.Println("Set default Constituency Office name")
 		}
-		
+
 		if contact.ConstituencyOffice.StreetAddress == "" {
 			contact.ConstituencyOffice.StreetAddress = "Unknown"
 			fmt.Println("Set default Constituency Office street address")
 		}
-		
+
 		if contact.ConstituencyOffice.City == "" {
 			contact.ConstituencyOffice.City = "Unknown"
 			fmt.Println("Set default Constituency Office city")
 		}
-		
+
 		if contact.ConstituencyOffice.Province == "" {
 			contact.ConstituencyOffice.Province = "Unknown"
 			fmt.Println("Set default Constituency Office province")
 		}
-		
+
 		if contact.ConstituencyOffice.PhoneNumber == "" {
 			contact.ConstituencyOffice.PhoneNumber = "000-000-0000"
 			fmt.Println("Set default Constituency Office phone number")
 		}
-		
+
 		if contact.ConstituencyOffice.FaxNumber == "" {
 			contact.ConstituencyOffice.FaxNumber = "000-000-0000"
 			fmt.Println("Set default Constituency Office fax")
@@ -600,7 +594,6 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 
 	return contact, nil
 }
-
 
 func processImg(s *goquery.Selection) ([]byte, error) {
 	fmt.Println("[PROCESSING IMG]...")
@@ -638,8 +631,7 @@ func processName(doc *goquery.Document) types.PersonName {
 }
 
 func formatName(name string) types.PersonName {
-	
-	
+
 	name = removeNamePrefix(name)
 
 	// Find the first space character
@@ -649,21 +641,21 @@ func formatName(name string) types.PersonName {
 		lastName := name[spaceIndex+1:]
 		return types.PersonName{
 			FirstName: firstName,
-			LastName: lastName,
+			LastName:  lastName,
 		}
 	}
-	
+
 	// Fallback to Fields for other cases
 	splitName := strings.Fields(name)
-	
+
 	firstName := splitName[0]
-	
+
 	// Join all remaining elements as the last name (handles multi-part last names)
 	lastName := strings.Join(splitName[1:], " ")
-	
+
 	return types.PersonName{
 		FirstName: firstName,
-		LastName: lastName,
+		LastName:  lastName,
 	}
 }
 
@@ -715,8 +707,6 @@ func processRoles(s *goquery.Selection) ([]string, error) {
 
 	return roles, nil
 }
-
-
 
 func Mps(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, fiscalQuarter int) ([]*types.MPExpenseSummary, error) {
 	var mps []*types.MPExpenseSummary
@@ -813,8 +803,6 @@ func Mps(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, fisca
 	return mps, parseErr
 }
 
-
-
 func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 	// Debug logging is extremely verbose; keep it opt-in.
 	debug := false
@@ -842,7 +830,6 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 					fmt.Printf("Cell %d: '%s'\n", i, text)
 				})
 			}
-			
 
 			// Skip invalid rows
 			if cells.Length() == 0 || strings.Contains(strings.ToLower(cells.Text()), "traveller") || strings.TrimSpace(cells.Eq(0).Text()) == "" {
@@ -938,12 +925,10 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 							traveller.DepartureCity = utils.CityName(departureCity)
 							traveller.DestinationCity = utils.CityName(destinationCity)
 
-
-							
 							if utils.IsFlight(travelExpense.FlightPoints) {
-								traveller.TransportationMode = constants.AIR_TRANSPORTATION
+								traveller.TransportationMode = airTransportation
 							} else {
-								traveller.TransportationMode = constants.GROUND_TRANSPORTATION
+								traveller.TransportationMode = groundTransportation
 							}
 
 							travelExpense.Travellers = append(travelExpense.Travellers, traveller)
@@ -959,7 +944,7 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 
 			} else {
 				// CASE 2: Full row
-			travelExpense := &types.TravelExpense{Sequence: seq}
+				travelExpense := &types.TravelExpense{Sequence: seq}
 				row.Find("td").Each(func(j int, cell *goquery.Selection) {
 					text := strings.TrimSpace(cell.Text())
 					switch j {
@@ -971,17 +956,17 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 							travelExpense.DateRange = dates
 						}
 					case 2:
-					val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
-					travelExpense.Costs.Transportation = val
-					travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
+						val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
+						travelExpense.Costs.Transportation = val
+						travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
 					case 3:
-					val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
-					travelExpense.Costs.Accommodation = val
-					travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
+						val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
+						travelExpense.Costs.Accommodation = val
+						travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
 					case 4:
-					val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
-					travelExpense.Costs.MealsAndIncidentals = val
-					travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
+						val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
+						travelExpense.Costs.MealsAndIncidentals = val
+						travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
 					case 5:
 						travelExpense.FlightPoints.Regular, _ = utils.FlightPointsToFloat(text)
 					case 6:
@@ -989,9 +974,9 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 					case 7:
 						travelExpense.FlightPoints.USA, _ = utils.FlightPointsToFloat(text)
 					case 8:
-					val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
-					travelExpense.Costs.Total = val
-					travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
+						val, refunded, _ := utils.ExpenseToDecimalWithRefundFlag(text)
+						travelExpense.Costs.Total = val
+						travelExpense.IsRefunded = travelExpense.IsRefunded || refunded
 					}
 				})
 
@@ -1024,9 +1009,9 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 										traveller.DestinationCity = utils.CityName(city)
 									}
 									if utils.IsFlight(travelExpense.FlightPoints) {
-										traveller.TransportationMode = constants.AIR_TRANSPORTATION
+										traveller.TransportationMode = airTransportation
 									} else {
-										traveller.TransportationMode = constants.GROUND_TRANSPORTATION
+										traveller.TransportationMode = groundTransportation
 									}
 									traveller.Date = travelExpense.DateRange.StartDate
 								default:
@@ -1045,10 +1030,10 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 										traveller.DestinationCity = utils.CityName(text)
 									}
 									if utils.IsFlight(travelExpense.FlightPoints) {
-										traveller.TransportationMode = constants.AIR_TRANSPORTATION
+										traveller.TransportationMode = airTransportation
 									} else {
-										traveller.TransportationMode = constants.GROUND_TRANSPORTATION
-									}								
+										traveller.TransportationMode = groundTransportation
+									}
 								}
 							})
 
@@ -1057,7 +1042,7 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 							}
 
 							if traveller.Date == "" {
-								
+
 								isCancelledTrip := utils.IsTripCancelled(traveller.Purpose)
 								if isCancelledTrip {
 									utils.HandleCancelledTrip(&traveller, travelExpense.DateRange)

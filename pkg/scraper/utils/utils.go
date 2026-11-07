@@ -12,9 +12,10 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/shopspring/decimal"
-	"github.com/willondrik/hoc-spend/pkg/scraper/constants"
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 )
+
+const baseURL = "https://www.ourcommons.ca"
 
 func ReverseDirectionKey(cities string) string {
 	split := strings.Split(cities, "_")
@@ -32,7 +33,7 @@ func GetHref(cell *goquery.Selection) (string, error) {
 		return "", nil
 	}
 
-	href := fmt.Sprintf("%s%s", constants.BASE_URL, hrefText)
+	href := fmt.Sprintf("%s%s", baseURL, hrefText)
 	return href, nil
 }
 

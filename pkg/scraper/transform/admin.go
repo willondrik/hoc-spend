@@ -133,10 +133,10 @@ func AdministratorExpenditureReports(resp *http.Response) (types.ExpenditureRepo
 // house-administration report page.
 //
 // It mirrors the script logic: anchors with class "view-report-link".
-func AdminExpenseUrls(resp *http.Response) (types.AdministratorExpenseURLs, error) {
+func AdminExpenseUrls(resp *http.Response) (types.AdminExpenseURLs, error) {
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return types.AdministratorExpenseURLs{}, fmt.Errorf("[GOQUERY FAILED] %s", err)
+		return types.AdminExpenseURLs{}, fmt.Errorf("[GOQUERY FAILED] %s", err)
 	}
 
 	var expenseUrls []string
@@ -153,10 +153,10 @@ func AdminExpenseUrls(resp *http.Response) (types.AdministratorExpenseURLs, erro
 	})
 
 	if len(expenseUrls) < 3 {
-		return types.AdministratorExpenseURLs{}, fmt.Errorf("expected 3 expense urls, got %d", len(expenseUrls))
+		return types.AdminExpenseURLs{}, fmt.Errorf("expected 3 expense urls, got %d", len(expenseUrls))
 	}
 
-	return types.AdministratorExpenseURLs{
+	return types.AdminExpenseURLs{
 		Travel:      expenseUrls[0],
 		Hospitality: expenseUrls[1],
 		Contract:    expenseUrls[2],
