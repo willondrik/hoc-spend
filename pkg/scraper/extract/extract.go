@@ -12,7 +12,7 @@ import (
 
 type ExtractSvc struct {
 	rm *requests.RequestManager
-} 
+}
 
 func NewSvc(rm *requests.RequestManager) *ExtractSvc {
 	return &ExtractSvc{
@@ -79,15 +79,20 @@ func (s *ExtractSvc) MpProfile(name types.PersonName) (*http.Response, error) {
 	return resp, nil
 }
 
+// MpProfileByURL fetches an exact MP profile URL discovered from the member directory.
+func (s *ExtractSvc) MpProfileByURL(profileURL string) (*http.Response, error) {
+	return s.rm.Get(profileURL)
+}
+
 // Returns raw Members of Parliament spending data
 func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseResponses, error) {
 	var (
-		wg sync.WaitGroup
-		mu sync.Mutex
-		contract *http.Response
+		wg          sync.WaitGroup
+		mu          sync.Mutex
+		contract    *http.Response
 		hospitality *http.Response
-		travel *http.Response
-		errs []error
+		travel      *http.Response
+		errs        []error
 	)
 
 	wg.Add(3)
@@ -117,7 +122,6 @@ func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseRespon
 		hospitality = expenses
 	}()
 
-
 	go func() {
 		defer wg.Done()
 
@@ -138,8 +142,8 @@ func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseRespon
 	}
 
 	return &types.RawExpenseResponses{
-		Contract: contract,
+		Contract:    contract,
 		Hospitality: hospitality,
-		Travel: travel,
+		Travel:      travel,
 	}, nil
 }

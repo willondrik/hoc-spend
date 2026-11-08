@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/willondrik/hoc-spend/pkg/scraper/requests"
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 	"github.com/willondrik/hoc-spend/pkg/scraper/utils"
 )
@@ -273,7 +274,22 @@ func GetPhoneAndFax(s *goquery.Selection) (string, string) {
 
 	return strings.TrimSpace(rawPhone), strings.TrimSpace(rawFax)
 }
+
+// GetProfile parses an MP profile response using the default retrying request
+// manager for avatar downloads. Call GetProfileWithRequestManager when the
+// caller already owns a request manager.
 func GetProfile(resp *http.Response, url string) (*types.MPDetails, error) {
+	return GetProfileWithRequestManager(resp, url, requests.NewRequestManager())
+}
+
+// GetProfileWithRequestManager parses an MP profile response. Profile avatar
+// downloads use the supplied request manager, matching the retry/timeout
+// behavior used for MP expense and profile-page requests.
+func GetProfileWithRequestManager(resp *http.Response, url string, rm *requests.RequestManager) (*types.MPDetails, error) {
+	if rm == nil {
+		return nil, fmt.Errorf("profile request manager must not be nil")
+	}
+
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("[GOQUERY FAILED] Unable to process resp body: %w", err)
@@ -338,7 +354,7 @@ func GetProfile(resp *http.Response, url string) (*types.MPDetails, error) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		img, err := processImg(profile)
+		img, err := processImg(profile, rm)
 		if err != nil {
 			mu.Lock()
 			errs = append(errs, fmt.Errorf("failed to process image: %w", err))
@@ -405,9 +421,11 @@ func GetUrls(resp *http.Response) ([]string, error) {
 	doc.Find(".ce-mip-mp-tile-container").Each(func(i int, s *goquery.Selection) {
 		rawUrl, exists := s.Find("a").Attr("href")
 		if !exists {
-			panic("no url")
+			fmt.Printf("[URLS] skipping tile=%d because it has no anchor href\n", i)
+			return
 		}
 		url := fmt.Sprintf("https://www.ourcommons.ca%s", rawUrl)
+		fmt.Printf("[URLS] discovered tile=%d profileURL=%s\n", i, url)
 		mpUrls = append(mpUrls, url)
 	})
 	return mpUrls, nil
@@ -440,7 +458,7 @@ func getRuntime(elapsed time.Time) {
 
 func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 	var contact types.MPContactInfo
-	c := s.Find("#contact")
+	c := s.Find("#c")
 
 	// Hill Office
 	hillOffice := types.OfficeAddress{
@@ -473,6 +491,7 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 			return
 		}
 	})
+	fmt.Println("[CONTACT]", contact)
 	contact.HillOffice = hillOffice
 
 	// Constituency Office
@@ -596,7 +615,7 @@ func processContact(s *goquery.Selection) (types.MPContactInfo, error) {
 	return contact, nil
 }
 
-func processImg(s *goquery.Selection) ([]byte, error) {
+func processImg(s *goquery.Selection, rm *requests.RequestManager) ([]byte, error) {
 	fmt.Println("[PROCESSING IMG]...")
 	imgSrc, exists := s.Find(".ce-mip-mp-picture").Attr("src")
 	if !exists {
@@ -605,7 +624,7 @@ func processImg(s *goquery.Selection) ([]byte, error) {
 	}
 
 	url := fmt.Sprintf("https://www.ourcommons.ca%s", imgSrc)
-	resp, err := http.Get(url)
+	resp, err := rm.Get(url)
 	if err != nil {
 		fmt.Printf("[WARNING] GET request failed for image: %v, using empty avatar\n", err)
 		return []byte{}, nil
@@ -692,19 +711,17 @@ func processProvince(s *goquery.Selection) (string, error) {
 
 func processRoles(s *goquery.Selection) ([]string, error) {
 	fmt.Println("[PROCESSING ROLES]...")
-	var roles []string
-	r := s.Find("#roles")
+	roles := []string{"Member of Parliament"}
+	r := s.Find(".ce-mip-roles")
 	list := r.Find(".ce-mip-roles-list")
 
 	list.Find("span").Each(func(i int, s *goquery.Selection) {
-		roles = append(roles, strings.TrimSpace(s.Text()))
+		role := strings.TrimSpace(s.Text())
+		if role != "" && role != "Member of Parliament" {
+			roles = append(roles, role)
+		}
 	})
 	fmt.Println("[SUCCESS] Roles extracted:", roles)
-
-	if len(roles) < 1 {
-		fmt.Println("[WARNING] No roles found for MP, using default role 'Member of Parliament'")
-		return []string{"Member of Parliament"}, nil
-	}
 
 	return roles, nil
 }
