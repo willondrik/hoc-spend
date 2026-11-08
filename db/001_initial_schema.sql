@@ -35,10 +35,20 @@ CREATE TABLE IF NOT EXISTS disclosure_reports (
 -- A normalized person record is used when a source value identifies an MP,
 -- officer, traveller, or another named participant. Source pages do not expose
 -- durable person IDs, so name fields remain the source-of-truth identifiers.
+-- MP-specific profile data belongs to mps, not to generic traveller records.
 CREATE TABLE IF NOT EXISTS people (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     first_name TEXT NOT NULL DEFAULT '',
     last_name TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- A durable MP entity owns profile enrichment independently of any quarterly
+-- disclosure report. Travellers remain linked only to people.
+CREATE TABLE IF NOT EXISTS mps (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    person_id BIGINT NOT NULL UNIQUE REFERENCES people(id) ON DELETE CASCADE,
     province TEXT,
     profile_url TEXT,
     avatar BYTEA,
@@ -49,7 +59,25 @@ CREATE TABLE IF NOT EXISTS people (
     roles JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT people_name_key UNIQUE (first_name, last_name)
+    CONSTRAINT mps_profile_url_key UNIQUE (profile_url)
+);
+
+-- An MP affiliation records the caucus and riding associated with one or more
+-- quarterly disclosures. It preserves historic spending context while mps
+-- remains the durable identity and owner of the current profile.
+CREATE TABLE IF NOT EXISTS mp_affiliations (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    mp_id BIGINT NOT NULL REFERENCES mps(id) ON DELETE RESTRICT,
+    constituency TEXT NOT NULL DEFAULT '',
+    caucus TEXT NOT NULL DEFAULT '',
+    effective_from DATE,
+    effective_to DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mp_affiliations_period_order CHECK (
+        effective_from IS NULL OR effective_to IS NULL OR effective_from <= effective_to
+    ),
+    CONSTRAINT mp_affiliations_mp_constituency_caucus_key UNIQUE (mp_id, constituency, caucus)
 );
 
 -- A report subject is the person/office whose quarterly summary is disclosed.
@@ -58,9 +86,9 @@ CREATE TABLE IF NOT EXISTS people (
 CREATE TABLE IF NOT EXISTS report_subjects (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
-    person_id BIGINT REFERENCES people(id) ON DELETE SET NULL,
+    person_id BIGINT REFERENCES people(id) ON DELETE RESTRICT,
+    mp_affiliation_id BIGINT REFERENCES mp_affiliations(id) ON DELETE RESTRICT,
     subject_kind TEXT NOT NULL CHECK (subject_kind IN ('mp', 'officer')),
-    constituency TEXT,
     caucus TEXT,
     role TEXT,
     salaries NUMERIC(14, 2) NOT NULL DEFAULT 0,
@@ -73,27 +101,32 @@ CREATE TABLE IF NOT EXISTS report_subjects (
     contract_source_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT report_subjects_kind_matches_domain CHECK (
-        (subject_kind = 'mp') OR (subject_kind = 'officer')
+    CONSTRAINT report_subjects_subject_reference_check CHECK (
+        (subject_kind = 'mp' AND mp_affiliation_id IS NOT NULL AND person_id IS NULL)
+        OR (subject_kind = 'officer' AND person_id IS NOT NULL AND mp_affiliation_id IS NULL)
     ),
-    CONSTRAINT report_subjects_report_person_key UNIQUE NULLS NOT DISTINCT (report_id, person_id)
+    CONSTRAINT report_subjects_report_person_key UNIQUE (report_id, person_id),
+    CONSTRAINT report_subjects_report_mp_affiliation_key UNIQUE (report_id, mp_affiliation_id)
 );
 
 CREATE TABLE IF NOT EXISTS mp_contract_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     total NUMERIC(14, 2) NOT NULL,
     is_refunded BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mp_contract_expenses_subject_source_key UNIQUE (report_subject_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS mp_hospitality_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     location TEXT NOT NULL DEFAULT '',
@@ -103,16 +136,19 @@ CREATE TABLE IF NOT EXISTS mp_hospitality_expenses (
     total_cost NUMERIC(14, 2) NOT NULL,
     cost_per_person NUMERIC(14, 2) NOT NULL DEFAULT 0,
     is_refunded BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mp_hospitality_expenses_subject_source_key UNIQUE (report_subject_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS mp_hospitality_expense_items (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     hospitality_expense_id BIGINT NOT NULL REFERENCES mp_hospitality_expenses(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     claim TEXT NOT NULL DEFAULT '',
     supplier TEXT NOT NULL,
     cost NUMERIC(14, 2) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mp_hospitality_expense_items_expense_source_key UNIQUE (hospitality_expense_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS mp_travel_expenses (
@@ -143,6 +179,7 @@ CREATE TABLE IF NOT EXISTS mp_travel_expenses (
 CREATE TABLE IF NOT EXISTS mp_travelers (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     travel_expense_id BIGINT NOT NULL REFERENCES mp_travel_expenses(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     person_id BIGINT REFERENCES people(id) ON DELETE SET NULL,
     traveller_type TEXT NOT NULL DEFAULT '',
     purpose TEXT NOT NULL DEFAULT '',
@@ -156,12 +193,14 @@ CREATE TABLE IF NOT EXISTS mp_travelers (
     emissions DOUBLE PRECISION,
     emissions_unit TEXT,
     travel_class TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT mp_travelers_expense_source_key UNIQUE (travel_expense_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS administration_contract_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     period_start DATE,
     period_end DATE,
@@ -172,7 +211,8 @@ CREATE TABLE IF NOT EXISTS administration_contract_expenses (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT administration_contract_expenses_period_order CHECK (
         period_start IS NULL OR period_end IS NULL OR period_start <= period_end
-    )
+    ),
+    CONSTRAINT administration_contract_expenses_report_source_key UNIQUE (report_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS administration_contract_suppliers (
@@ -238,17 +278,20 @@ CREATE TABLE IF NOT EXISTS administration_travel_places (
 CREATE TABLE IF NOT EXISTS officer_contract_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     total_cost NUMERIC(14, 2) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT officer_contract_expenses_subject_source_key UNIQUE (report_subject_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS officer_hospitality_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     location TEXT NOT NULL DEFAULT '',
@@ -256,7 +299,8 @@ CREATE TABLE IF NOT EXISTS officer_hospitality_expenses (
     purpose TEXT NOT NULL DEFAULT '',
     total_cost NUMERIC(14, 2) NOT NULL,
     cost_per_person NUMERIC(14, 2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT officer_hospitality_expenses_subject_source_key UNIQUE (report_subject_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS officer_hospitality_suppliers (
@@ -270,6 +314,7 @@ CREATE TABLE IF NOT EXISTS officer_hospitality_suppliers (
 CREATE TABLE IF NOT EXISTS officer_travel_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     period_start DATE,
     period_end DATE,
     source_period_start TEXT NOT NULL DEFAULT '',
@@ -284,7 +329,8 @@ CREATE TABLE IF NOT EXISTS officer_travel_expenses (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT officer_travel_expenses_period_order CHECK (
         period_start IS NULL OR period_end IS NULL OR period_start <= period_end
-    )
+    ),
+    CONSTRAINT officer_travel_expenses_subject_source_key UNIQUE (report_subject_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS officer_travel_places (
@@ -297,8 +343,10 @@ CREATE TABLE IF NOT EXISTS officer_travel_places (
 
 CREATE INDEX IF NOT EXISTS disclosure_reports_domain_period_idx
     ON disclosure_reports (domain, fiscal_year DESC, fiscal_quarter DESC);
+CREATE INDEX IF NOT EXISTS mp_affiliations_mp_idx ON mp_affiliations (mp_id);
 CREATE INDEX IF NOT EXISTS report_subjects_report_idx ON report_subjects (report_id);
 CREATE INDEX IF NOT EXISTS report_subjects_person_idx ON report_subjects (person_id);
+CREATE INDEX IF NOT EXISTS report_subjects_mp_affiliation_idx ON report_subjects (mp_affiliation_id);
 CREATE INDEX IF NOT EXISTS mp_contract_expenses_subject_date_idx
     ON mp_contract_expenses (report_subject_id, expense_date DESC);
 CREATE INDEX IF NOT EXISTS mp_contract_expenses_supplier_idx ON mp_contract_expenses (supplier);
