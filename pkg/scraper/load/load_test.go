@@ -2,6 +2,7 @@ package load
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,9 +184,29 @@ func TestSourceDatePreservesRawValue(t *testing.T) {
 	}
 }
 
+func TestSourceDateRangeNormalizesReversedParsedDatesWithoutChangingSourceText(t *testing.T) {
+	start, end, sourceStart, sourceEnd := sourceDateRange(types.DateRange{
+		StartDate: "June 30, 2026",
+		EndDate:   "April 1, 2026",
+	})
+	if sourceStart != "June 30, 2026" || sourceEnd != "April 1, 2026" {
+		t.Fatalf("source text = (%q, %q), want original source ordering", sourceStart, sourceEnd)
+	}
+	if start == nil || end == nil || start.Format("2006-01-02") != "2026-04-01" || end.Format("2006-01-02") != "2026-06-30" {
+		t.Fatalf("normalized range = (%v, %v), want (2026-04-01, 2026-06-30)", start, end)
+	}
+}
+
 func TestOptionalPersonAcceptsBlankNameWithoutDatabase(t *testing.T) {
 	if sourceText(types.PersonName{}.FirstName) != "" || sourceText(types.PersonName{}.LastName) != "" {
 		t.Fatal("blank person name should remain blank before optional resolution")
+	}
+}
+
+func TestPersonLockIdentityContainsNoNULByte(t *testing.T) {
+	identity := strings.ToLower("Ada") + "\x1f" + strings.ToLower("Lovelace")
+	if strings.ContainsRune(identity, '\x00') {
+		t.Fatalf("advisory-lock identity %q contains a PostgreSQL-incompatible NUL byte", identity)
 	}
 }
 

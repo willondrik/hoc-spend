@@ -401,8 +401,7 @@ func adminParseContractSuppliers(suppliers string) []string {
 	if strings.Contains(suppliers, "Qualified Supplier(s)") {
 		split := strings.Split(suppliers, "•")
 		for i := 1; i < len(split); i++ {
-			val := adminFormatToTitleCase(split[i])
-			val = strings.TrimSpace(val)
+			val := utils.NormalizeSupplierName(split[i])
 			if val != "" {
 				s = append(s, val)
 			}
@@ -413,7 +412,7 @@ func adminParseContractSuppliers(suppliers string) []string {
 	if strings.Contains(suppliers, "•") {
 		split := strings.Split(suppliers, "• ")
 		for _, v := range split {
-			val := strings.TrimSpace(adminFormatToTitleCase(v))
+			val := utils.NormalizeSupplierName(v)
 			if val != "" {
 				s = append(s, val)
 			}
@@ -421,8 +420,7 @@ func adminParseContractSuppliers(suppliers string) []string {
 		return s
 	}
 
-	val := adminFormatToTitleCase(suppliers)
-	val = strings.TrimSpace(val)
+	val := utils.NormalizeSupplierName(suppliers)
 	if val != "" {
 		s = append(s, val)
 	}

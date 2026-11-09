@@ -31,6 +31,16 @@ func (s *ExtractSvc) AdminReports() (*http.Response, error) {
 	return resp, nil
 }
 
+// AdminReportsByURL fetches one House Administration quarterly report page.
+func (s *ExtractSvc) AdminReportsByURL(reportURL string) (*http.Response, error) {
+	return s.rm.Get(reportURL)
+}
+
+// GetByURL fetches a known House of Commons source URL.
+func (s *ExtractSvc) GetByURL(sourceURL string) (*http.Response, error) {
+	return s.rm.Get(sourceURL)
+}
+
 // Returns officer expenditure report data
 func (s *ExtractSvc) OfficerReports() (*http.Response, error) {
 	const URL = "https://www.ourcommons.ca/proactivedisclosure/en/house-officers"
@@ -138,6 +148,11 @@ func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseRespon
 	wg.Wait()
 
 	if len(errs) != 0 {
+		for _, response := range []*http.Response{contract, hospitality, travel} {
+			if response != nil && response.Body != nil {
+				_ = response.Body.Close()
+			}
+		}
 		return nil, fmt.Errorf("[EXTRACTION FAILED] %v", errs)
 	}
 

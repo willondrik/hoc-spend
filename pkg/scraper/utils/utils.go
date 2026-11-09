@@ -33,7 +33,10 @@ func GetHref(cell *goquery.Selection) (string, error) {
 		return "", nil
 	}
 
-	href := fmt.Sprintf("%s%s", baseURL, hrefText)
+	href := hrefText
+	if !strings.HasPrefix(hrefText, "http://") && !strings.HasPrefix(hrefText, "https://") {
+		href = fmt.Sprintf("%s%s", baseURL, hrefText)
+	}
 	return href, nil
 }
 

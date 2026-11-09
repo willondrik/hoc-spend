@@ -13,14 +13,29 @@ const (
 
 // RequestManager performs HTTP requests for the scraper.
 type RequestManager struct {
-	client *http.Client
+	client     *http.Client
+	retryDelay func(time.Duration)
 }
 
 // NewRequestManager creates a request manager with a bounded request timeout.
 func NewRequestManager() *RequestManager {
-	return &RequestManager{
-		client: &http.Client{Timeout: defaultTimeout},
+	return NewRequestManagerWithClient(&http.Client{Timeout: defaultTimeout})
+}
+
+// NewRequestManagerWithClient creates a request manager using client. It is
+// useful when an application needs a custom transport and for deterministic
+// HTTP tests. A nil client receives the standard bounded-timeout client.
+func NewRequestManagerWithClient(client *http.Client) *RequestManager {
+	if client == nil {
+		client = &http.Client{Timeout: defaultTimeout}
 	}
+	return &RequestManager{client: client, retryDelay: time.Sleep}
+}
+
+// SetRetryDelay overrides retry waiting. It is primarily intended for fast,
+// deterministic tests; passing nil restores the standard delay behavior.
+func (r *RequestManager) SetRetryDelay(delay func(time.Duration)) {
+	r.retryDelay = delay
 }
 
 // Get fetches a URL and retries retryable non-success responses. The caller owns
@@ -29,7 +44,11 @@ func (r *RequestManager) Get(url string) (*http.Response, error) {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		resp, err := r.client.Get(url)
 		if err != nil {
-			return nil, fmt.Errorf("request %q: %w", url, err)
+			if attempt == maxRetries-1 {
+				return nil, fmt.Errorf("request %q: failed after %d attempts: %w", url, maxRetries, err)
+			}
+			r.wait(attempt)
+			continue
 		}
 
 		if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
@@ -42,9 +61,17 @@ func (r *RequestManager) Get(url string) (*http.Response, error) {
 		}
 
 		if attempt < maxRetries-1 {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			r.wait(attempt)
 		}
 	}
 
 	return nil, fmt.Errorf("request %q: failed after %d attempts", url, maxRetries)
+}
+
+func (r *RequestManager) wait(attempt int) {
+	delay := r.retryDelay
+	if delay == nil {
+		delay = time.Sleep
+	}
+	delay(time.Duration(attempt+1) * time.Second)
 }

@@ -66,6 +66,12 @@ func sourceDate(value string) (*time.Time, string) {
 func sourceDateRange(value types.DateRange) (*time.Time, *time.Time, string, string) {
 	start, sourceStart := sourceDate(value.StartDate)
 	end, sourceEnd := sourceDate(value.EndDate)
+	// Some House source rows contain a reversed but otherwise parseable period.
+	// Keep both original strings for auditability, while normalizing the typed
+	// values to the database's period_start <= period_end invariant.
+	if start != nil && end != nil && start.After(*end) {
+		start, end = end, start
+	}
 	return start, end, sourceStart, sourceEnd
 }
 
@@ -120,7 +126,9 @@ func ensurePerson(ctx context.Context, tx pgx.Tx, name types.PersonName) (int64,
 		return 0, fmt.Errorf("person name is required")
 	}
 
-	identity := strings.ToLower(firstName) + "\x00" + strings.ToLower(lastName)
+	// PostgreSQL text values cannot contain NUL bytes, so use a control-byte
+	// separator that cannot be produced by normal trimmed source names.
+	identity := strings.ToLower(firstName) + "\x1f" + strings.ToLower(lastName)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, identity); err != nil {
 		return 0, fmt.Errorf("lock person identity: %w", err)
 	}

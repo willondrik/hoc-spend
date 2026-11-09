@@ -30,7 +30,7 @@ func OfficerContractExpenses(doc *goquery.Document) ([]types.OfficerContractExpe
 			continue
 		}
 
-		supplier := adminFormatToTitleCase(strings.TrimSpace(cells.Eq(0).Text()))
+		supplier := utils.NormalizeSupplierName(cells.Eq(0).Text())
 		if supplier == "" || strings.EqualFold(supplier, "supplier") {
 			continue
 		}
@@ -161,7 +161,7 @@ func OfficerHospitalityExpenses(doc *goquery.Document) ([]types.OfficerHospitali
 		var suppliers []types.OfficerSupplier
 		for j := 0; j < iCells.Length(); j += 3 {
 			nameRaw := strings.TrimSpace(iCells.Eq(j).Text())
-			name := adminFormatToTitleCase(nameRaw)
+			name := utils.NormalizeSupplierName(nameRaw)
 			costRaw := strings.TrimSpace(iCells.Eq(j + 2).Text())
 			if strings.EqualFold(name, "Total") {
 				break
@@ -296,6 +296,11 @@ func Officers(doc *goquery.Document, fiscalYear int, dateRange types.DateRange, 
 
 		rawName := strings.TrimSpace(cells.Eq(0).Text())
 		name := parseCommaName(rawName)
+		if name.FirstName == "" && name.LastName == "" {
+			// Older quarterly summaries can include non-person rows. They cannot
+			// be represented as report subjects and must not create blank people.
+			return
+		}
 		role := strings.TrimSpace(cells.Eq(1).Text())
 		caucus := strings.TrimSpace(cells.Eq(2).Text())
 
