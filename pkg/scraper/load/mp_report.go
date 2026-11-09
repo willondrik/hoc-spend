@@ -116,19 +116,31 @@ WHERE mp_id = $1 AND constituency = $2 AND caucus = $3`,
 			return loadCounts{}, fmt.Errorf("find existing MP affiliation: %w", err)
 		}
 	}
-	subjectID, subjectInserted, err := insertOrFindID(ctx, tx, `
+	var subjectID int64
+	var subjectInserted bool
+	err = tx.QueryRow(ctx, `
 INSERT INTO report_subjects (
     report_id, mp_affiliation_id, subject_kind, caucus, salaries, travel_total,
     hospitality_total, contract_total, source_url, travel_source_url,
     hospitality_source_url, contract_source_url
 )
 VALUES ($1, $2, 'mp', $3, $4, $5, $6, $7, $8, $9, $10, $11)
-ON CONFLICT (report_id, mp_affiliation_id) DO NOTHING RETURNING id`,
-		`SELECT id FROM report_subjects WHERE report_id = $1 AND mp_affiliation_id = $2`, reportID, affiliationID,
+ON CONFLICT (report_id, mp_affiliation_id) DO UPDATE SET
+    caucus = EXCLUDED.caucus,
+    salaries = EXCLUDED.salaries,
+    travel_total = EXCLUDED.travel_total,
+    hospitality_total = EXCLUDED.hospitality_total,
+    contract_total = EXCLUDED.contract_total,
+    source_url = EXCLUDED.source_url,
+    travel_source_url = EXCLUDED.travel_source_url,
+    hospitality_source_url = EXCLUDED.hospitality_source_url,
+    contract_source_url = EXCLUDED.contract_source_url,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, (xmax = 0)`, reportID, affiliationID,
 		sourceText(subject.Summary.Caucus), subject.Summary.Salaries, subject.Summary.TravelExpenses.TotalAmount,
 		subject.Summary.HospitalityExpenses.TotalAmount, subject.Summary.ContractExpenses.TotalAmount,
 		sourceText(subject.Summary.URL), sourceText(subject.Expenses.TravelExpensesURL),
-		sourceText(subject.Expenses.HospitalityExpensesURL), sourceText(subject.Expenses.ContractExpensesURL))
+		sourceText(subject.Expenses.HospitalityExpensesURL), sourceText(subject.Expenses.ContractExpensesURL)).Scan(&subjectID, &subjectInserted)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert MP report subject: %w", err)
 	}

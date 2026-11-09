@@ -49,19 +49,32 @@ func loadOfficerSubject(ctx context.Context, tx pgx.Tx, reportID int64, subject 
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("resolve officer %q %q: %w", subject.Summary.Name.FirstName, subject.Summary.Name.LastName, err)
 	}
-	subjectID, inserted, err := insertOrFindID(ctx, tx, `
+	var subjectID int64
+	var inserted bool
+	err = tx.QueryRow(ctx, `
 INSERT INTO report_subjects (
     report_id, person_id, subject_kind, caucus, role, salaries, travel_total,
     hospitality_total, contract_total, source_url, travel_source_url,
     hospitality_source_url, contract_source_url
 )
 VALUES ($1, $2, 'officer', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-ON CONFLICT (report_id, person_id) DO NOTHING
-RETURNING id`, `SELECT id FROM report_subjects WHERE report_id = $1 AND person_id = $2`,
+ON CONFLICT (report_id, person_id) DO UPDATE SET
+    caucus = EXCLUDED.caucus,
+    role = EXCLUDED.role,
+    salaries = EXCLUDED.salaries,
+    travel_total = EXCLUDED.travel_total,
+    hospitality_total = EXCLUDED.hospitality_total,
+    contract_total = EXCLUDED.contract_total,
+    source_url = EXCLUDED.source_url,
+    travel_source_url = EXCLUDED.travel_source_url,
+    hospitality_source_url = EXCLUDED.hospitality_source_url,
+    contract_source_url = EXCLUDED.contract_source_url,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING id, (xmax = 0)`,
 		reportID, personID, sourceText(subject.Summary.Caucus), sourceText(subject.Summary.Role), subject.Summary.Salaries,
 		subject.Summary.TravelExpenses.TotalAmount, subject.Summary.HospitalityExpenses.TotalAmount,
 		subject.Summary.ContractExpenses.TotalAmount, sourceText(subject.Summary.URL),
-		sourceText(subject.Expenses.TravelExpensesURL), sourceText(subject.Expenses.HospitalityExpensesURL), sourceText(subject.Expenses.ContractExpensesURL))
+		sourceText(subject.Expenses.TravelExpensesURL), sourceText(subject.Expenses.HospitalityExpensesURL), sourceText(subject.Expenses.ContractExpensesURL)).Scan(&subjectID, &inserted)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert officer report subject: %w", err)
 	}

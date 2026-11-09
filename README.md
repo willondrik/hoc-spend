@@ -174,9 +174,11 @@ The loader also has one-transaction APIs for complete parsed quarterly reports:
 - `Loader.LoadMPReport(ctx, report, []load.MPReportSubject)`
 
 Each persists its report header, subjects where applicable, expenses, and
-supplier/place/traveller children in the same transaction. The detail loaders
-are additive and never update an existing source row. A failed load rolls back
-the whole report transaction, allowing a later run to retry it cleanly.
+supplier/place/traveller children in the same transaction. Detail rows are
+additive and never update an existing source row. MP and Officer report-subject
+rows are refreshed on every complete report load so corrected source summary
+totals and category URLs can be backfilled by a re-scrape. A failed load rolls
+back the whole report transaction, allowing a later run to retry it cleanly.
 
 For MP report subjects, `MPReportSubject.ProfileURL` is required and must
 already exist in `mps.profile_url`; name-only MP matching is intentionally not
@@ -190,11 +192,14 @@ their House-provided `event_id`; MP travel uses the parsed source sequence.
 If the database was created using an older version of the bootstrap schema,
 apply [`db/002_add_idempotent_load_keys.sql`](./db/002_add_idempotent_load_keys.sql)
 and then [`db/003_add_administration_and_officer_report_links.sql`](./db/003_add_administration_and_officer_report_links.sql)
-once before invoking the detail loaders. The latter adds nullable category
-detail URLs without backfilling data: Administration URLs belong to each report,
-while Officer URLs belong to each report subject. A new local database
-initialized with `db/001_initial_schema.sql` already has these columns and
-constraints.
+and then [`db/004_add_report_subject_reconciliation.sql`](./db/004_add_report_subject_reconciliation.sql)
+once before invoking the detail loaders. The latter adds the
+`report_subject_expense_reconciliation` view; it compares MP/Officer source
+summary totals with their individually disclosed detail-row totals. The prior
+link migration adds nullable category detail URLs without backfilling data:
+Administration URLs belong to each report, while Officer URLs belong to each
+report subject. A new local database initialized with
+`db/001_initial_schema.sql` already has these columns, constraints, and view.
 
 The expected client/API payloads are documented in [`docs/frontend-data-contract.md`](./docs/frontend-data-contract.md).
 
@@ -215,6 +220,22 @@ Administration currently has no parsed source summary totals, so its audit
 verifies parsed category-row counts against persisted category-row counts.
 The command finishes all reports in a domain before returning a non-zero status
 when an audit check fails.
+
+For a persistent, queryable mismatch report after applying the migration, run:
+
+```sql
+SELECT *
+FROM report_subject_expense_reconciliation
+WHERE contract_mismatch OR hospitality_mismatch OR travel_mismatch
+ORDER BY fiscal_year DESC, fiscal_quarter DESC, subject_kind, last_name, first_name;
+```
+
+For a suspect travel total, `travel_summary_total` is the authoritative value
+shown on the House quarterly report, `travel_detail_total` is the scraper's
+aggregate of individual travel rows, and `travel_delta` is detail minus summary.
+Re-scrape the affected fiscal period with `-apply -all -audit` after deploying
+this change to refresh the stored source totals; use mismatched subjects as
+fixtures when extending the travel parser.
 
 ### Data and frontend contract
 

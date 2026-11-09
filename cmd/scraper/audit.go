@@ -58,22 +58,24 @@ func (s *domainRunStats) add(result load.DetailLoadResult, audit auditResult) {
 	s.Audit.merge(audit)
 }
 
-func auditMPParsed(subjects []load.MPReportSubject) auditResult {
+func auditMPParsed(report types.ExpenditureReport, subjects []load.MPReportSubject) auditResult {
 	result := auditResult{}
+	scope := fmt.Sprintf("parsed MP FY%d Q%d", report.FiscalYear, report.FiscalQuarter)
 	for _, subject := range subjects {
-		result.checkTotal("parsed MP", mpSubjectLabel(subject), "contract", subject.Summary.ContractExpenses.TotalAmount, sumMPContracts(subject.Expenses.ContractExpenses))
-		result.checkTotal("parsed MP", mpSubjectLabel(subject), "hospitality", subject.Summary.HospitalityExpenses.TotalAmount, sumMPHospitality(subject.Expenses.HospitalityExpenses))
-		result.checkTotal("parsed MP", mpSubjectLabel(subject), "travel", subject.Summary.TravelExpenses.TotalAmount, sumMPTravel(subject.Expenses.TravelExpenses))
+		result.checkTotal(scope, mpSubjectLabel(subject), "contract", subject.Summary.ContractExpenses.TotalAmount, sumMPContracts(subject.Expenses.ContractExpenses))
+		result.checkTotal(scope, mpSubjectLabel(subject), "hospitality", subject.Summary.HospitalityExpenses.TotalAmount, sumMPHospitality(subject.Expenses.HospitalityExpenses))
+		result.checkTotal(scope, mpSubjectLabel(subject), "travel", subject.Summary.TravelExpenses.TotalAmount, sumMPTravel(subject.Expenses.TravelExpenses))
 	}
 	return result
 }
 
-func auditOfficerParsed(subjects []load.OfficerReportSubject) auditResult {
+func auditOfficerParsed(report types.ExpenditureReport, subjects []load.OfficerReportSubject) auditResult {
 	result := auditResult{}
+	scope := fmt.Sprintf("parsed Officer FY%d Q%d", report.FiscalYear, report.FiscalQuarter)
 	for _, subject := range subjects {
-		result.checkTotal("parsed Officer", officerSubjectLabel(subject), "contract", subject.Summary.ContractExpenses.TotalAmount, sumOfficerContracts(subject.Expenses.ContractExpenses))
-		result.checkTotal("parsed Officer", officerSubjectLabel(subject), "hospitality", subject.Summary.HospitalityExpenses.TotalAmount, sumOfficerHospitality(subject.Expenses.HospitalityExpenses))
-		result.checkTotal("parsed Officer", officerSubjectLabel(subject), "travel", subject.Summary.TravelExpenses.TotalAmount, sumOfficerTravel(subject.Expenses.TravelExpenses))
+		result.checkTotal(scope, officerSubjectLabel(subject), "contract", subject.Summary.ContractExpenses.TotalAmount, sumOfficerContracts(subject.Expenses.ContractExpenses))
+		result.checkTotal(scope, officerSubjectLabel(subject), "hospitality", subject.Summary.HospitalityExpenses.TotalAmount, sumOfficerHospitality(subject.Expenses.HospitalityExpenses))
+		result.checkTotal(scope, officerSubjectLabel(subject), "travel", subject.Summary.TravelExpenses.TotalAmount, sumOfficerTravel(subject.Expenses.TravelExpenses))
 	}
 	return result
 }

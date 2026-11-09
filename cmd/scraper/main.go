@@ -207,7 +207,7 @@ func runDomain(ctx context.Context, pool *pgxpool.Pool, loader *load.Loader, ser
 				return fmt.Errorf("load MP FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
 			}
 			if opts.audit {
-				audit = auditMPParsed(subjects)
+				audit = auditMPParsed(report, subjects)
 				audit.merge(auditMPPersisted(ctx, pool, report, subjects))
 			}
 			fmt.Printf("  MP identities FY%d Q%d received=%d inserted=%d existing=%d duplicates=%d\n", report.FiscalYear, report.FiscalQuarter, profileResult.Received, profileResult.Inserted, profileResult.Existing, profileResult.DuplicateInput)
@@ -234,7 +234,7 @@ func runDomain(ctx context.Context, pool *pgxpool.Pool, loader *load.Loader, ser
 				return fmt.Errorf("load Officer FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
 			}
 			if opts.audit {
-				audit = auditOfficerParsed(subjects)
+				audit = auditOfficerParsed(report, subjects)
 				audit.merge(auditOfficerPersisted(ctx, pool, report, subjects))
 			}
 		default:

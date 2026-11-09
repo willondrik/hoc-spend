@@ -1,7 +1,8 @@
 // Package load incrementally persists scraper output in PostgreSQL.
 //
-// Loaders are additive: they identify source records that are already present
-// and insert only records that are new. They do not update existing rows.
+// Loaders add missing source detail records without rewriting them. Complete MP
+// and officer report loads do refresh their report-subject summary metadata so a
+// re-scrape can correct source totals and category URLs.
 package load
 
 import (
