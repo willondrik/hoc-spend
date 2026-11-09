@@ -169,6 +169,34 @@ func TestSourceKeyIsDeterministicAndNamespaced(t *testing.T) {
 	}
 }
 
+func TestOccurrenceSourceKeyPreservesFirstAndSeparatesDuplicates(t *testing.T) {
+	baseKey := "base-key"
+	first, err := occurrenceSourceKey(baseKey, 1)
+	if err != nil {
+		t.Fatalf("first occurrenceSourceKey() error = %v", err)
+	}
+	if first != baseKey {
+		t.Fatalf("first occurrence key = %q, want base key %q", first, baseKey)
+	}
+	second, err := occurrenceSourceKey(baseKey, 2)
+	if err != nil {
+		t.Fatalf("second occurrenceSourceKey() error = %v", err)
+	}
+	if second == baseKey || len(second) != 64 {
+		t.Fatalf("second occurrence key = %q, want distinct SHA-256 key", second)
+	}
+	repeatedSecond, err := occurrenceSourceKey(baseKey, 2)
+	if err != nil {
+		t.Fatalf("repeated second occurrenceSourceKey() error = %v", err)
+	}
+	if repeatedSecond != second {
+		t.Fatalf("second occurrence key = %q then %q, want deterministic result", second, repeatedSecond)
+	}
+	if _, err := occurrenceSourceKey(baseKey, 0); err == nil {
+		t.Fatal("occurrenceSourceKey() error = nil for zero occurrence")
+	}
+}
+
 func TestSourceDatePreservesRawValue(t *testing.T) {
 	parsed, raw := sourceDate(" Monday, April 1, 2024 ")
 	if raw != "Monday, April 1, 2024" {
@@ -200,6 +228,24 @@ func TestSourceDateRangeNormalizesReversedParsedDatesWithoutChangingSourceText(t
 func TestOptionalPersonAcceptsBlankNameWithoutDatabase(t *testing.T) {
 	if sourceText(types.PersonName{}.FirstName) != "" || sourceText(types.PersonName{}.LastName) != "" {
 		t.Fatal("blank person name should remain blank before optional resolution")
+	}
+}
+
+func TestAdministrationReportCategoryURLsAreTrimmedBeforePersistence(t *testing.T) {
+	report := types.AdminReport{
+		Travel:      types.AdminTravelExpenseCollection{URL: " https://example.test/admin/travel "},
+		Hospitality: types.AdminHospitalityExpenseCollection{URL: "\thttps://example.test/admin/hospitality\n"},
+		Contract:    types.AdminContractExpenseCollection{URL: " https://example.test/admin/contracts\r\n"},
+	}
+
+	if got, want := sourceText(report.Travel.URL), "https://example.test/admin/travel"; got != want {
+		t.Fatalf("travel source URL = %q, want %q", got, want)
+	}
+	if got, want := sourceText(report.Hospitality.URL), "https://example.test/admin/hospitality"; got != want {
+		t.Fatalf("hospitality source URL = %q, want %q", got, want)
+	}
+	if got, want := sourceText(report.Contract.URL), "https://example.test/admin/contracts"; got != want {
+		t.Fatalf("contract source URL = %q, want %q", got, want)
 	}
 }
 

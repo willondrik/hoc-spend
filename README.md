@@ -189,10 +189,32 @@ their House-provided `event_id`; MP travel uses the parsed source sequence.
 
 If the database was created using an older version of the bootstrap schema,
 apply [`db/002_add_idempotent_load_keys.sql`](./db/002_add_idempotent_load_keys.sql)
-once before invoking the detail loaders. A new local database initialized with
-`db/001_initial_schema.sql` already has these columns and constraints.
+and then [`db/003_add_administration_and_officer_report_links.sql`](./db/003_add_administration_and_officer_report_links.sql)
+once before invoking the detail loaders. The latter adds nullable category
+detail URLs without backfilling data: Administration URLs belong to each report,
+while Officer URLs belong to each report subject. A new local database
+initialized with `db/001_initial_schema.sql` already has these columns and
+constraints.
 
 The expected client/API payloads are documented in [`docs/frontend-data-contract.md`](./docs/frontend-data-contract.md).
+
+### Full scrape and reconciliation audit
+
+To re-fetch every discovered report in all three domains, load it idempotently,
+and print terminal reconciliation statistics, run:
+
+```bash
+go run ./cmd/scraper -apply -all -audit
+```
+
+The command prints discovered/new/existing and processed row counts for MPs,
+House Administration, and House Officers. For MP and Officer reports it checks
+each source summary category total against the parsed detail-item aggregate and
+then checks the persisted summary totals against the database aggregates.
+Administration currently has no parsed source summary totals, so its audit
+verifies parsed category-row counts against persisted category-row counts.
+The command finishes all reports in a domain before returning a non-zero status
+when an audit check fails.
 
 ### Data and frontend contract
 

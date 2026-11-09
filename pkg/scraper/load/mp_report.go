@@ -3,6 +3,7 @@ package load
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
@@ -15,6 +16,41 @@ type MPReportSubject struct {
 	ProfileURL string
 	Summary    types.MPExpenseSummary
 	Expenses   types.MPExpenses
+}
+
+// ReuseExistingMPSubjectProfiles replaces generated source identities with an
+// identity already attached to the same report/name/riding. This protects
+// repeated historical loads when a House report URL changes while retaining
+// source-scoped identities for previously unseen subjects.
+func (l *Loader) ReuseExistingMPSubjectProfiles(ctx context.Context, report types.ExpenditureReport, subjects []MPReportSubject) error {
+	for index := range subjects {
+		subject := &subjects[index]
+		var profileURL string
+		err := l.pool.QueryRow(ctx, `
+SELECT mps.profile_url
+FROM report_subjects
+JOIN disclosure_reports ON disclosure_reports.id = report_subjects.report_id
+JOIN mp_affiliations ON mp_affiliations.id = report_subjects.mp_affiliation_id
+JOIN mps ON mps.id = mp_affiliations.mp_id
+JOIN people ON people.id = mps.person_id
+WHERE disclosure_reports.domain = 'mp'
+  AND disclosure_reports.fiscal_year = $1
+  AND disclosure_reports.fiscal_quarter = $2
+  AND lower(people.first_name) = lower($3)
+  AND lower(people.last_name) = lower($4)
+  AND mp_affiliations.constituency = $5
+ORDER BY report_subjects.id DESC
+LIMIT 1`, report.FiscalYear, report.FiscalQuarter,
+			strings.TrimSpace(subject.Summary.Name.FirstName), strings.TrimSpace(subject.Summary.Name.LastName), strings.TrimSpace(subject.Summary.Constituency)).Scan(&profileURL)
+		if err == pgx.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("reuse MP profile for %q %q: %w", subject.Summary.Name.FirstName, subject.Summary.Name.LastName, err)
+		}
+		subject.ProfileURL = profileURL
+	}
+	return nil
 }
 
 // LoadMPReport writes an MP quarterly report and all supplied MP details in
@@ -62,14 +98,23 @@ func loadMPSubject(ctx context.Context, tx pgx.Tx, reportID int64, subject MPRep
 	}
 
 	start, end, _, _ := sourceDateRange(subject.Summary.ReportingPeriod)
-	affiliationID, affiliationInserted, err := insertOrFindID(ctx, tx, `
+	var affiliationID int64
+	err := tx.QueryRow(ctx, `
 INSERT INTO mp_affiliations (mp_id, constituency, caucus, effective_from, effective_to)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (mp_id, constituency, caucus) DO NOTHING RETURNING id`,
-		`SELECT id FROM mp_affiliations WHERE mp_id = $1 AND constituency = $2 AND caucus = $3`, mpID,
-		sourceText(subject.Summary.Constituency), sourceText(subject.Summary.Caucus), start, end)
-	if err != nil {
+		mpID, sourceText(subject.Summary.Constituency), sourceText(subject.Summary.Caucus), start, end).Scan(&affiliationID)
+	affiliationInserted := err == nil
+	if err != nil && err != pgx.ErrNoRows {
 		return loadCounts{}, fmt.Errorf("insert MP affiliation: %w", err)
+	}
+	if !affiliationInserted {
+		if err := tx.QueryRow(ctx, `
+SELECT id FROM mp_affiliations
+WHERE mp_id = $1 AND constituency = $2 AND caucus = $3`,
+			mpID, sourceText(subject.Summary.Constituency), sourceText(subject.Summary.Caucus)).Scan(&affiliationID); err != nil {
+			return loadCounts{}, fmt.Errorf("find existing MP affiliation: %w", err)
+		}
 	}
 	subjectID, subjectInserted, err := insertOrFindID(ctx, tx, `
 INSERT INTO report_subjects (
@@ -94,11 +139,21 @@ ON CONFLICT (report_id, mp_affiliation_id) DO NOTHING RETURNING id`,
 	if !subjectInserted {
 		counts.ExistingRows++
 	}
+	contractOccurrences := make(map[string]int, len(subject.Expenses.ContractExpenses))
 	for _, expense := range subject.Expenses.ContractExpenses {
 		if expense == nil {
 			return loadCounts{}, fmt.Errorf("MP contract expense is nil")
 		}
-		loaded, err := loadMPContract(ctx, tx, subjectID, *expense)
+		baseKey, err := sourceKey("mp-contract", *expense)
+		if err != nil {
+			return loadCounts{}, fmt.Errorf("create MP contract source key: %w", err)
+		}
+		contractOccurrences[baseKey]++
+		key, err := occurrenceSourceKey(baseKey, contractOccurrences[baseKey])
+		if err != nil {
+			return loadCounts{}, fmt.Errorf("create MP contract occurrence key: %w", err)
+		}
+		loaded, err := loadMPContract(ctx, tx, subjectID, key, *expense)
 		if err != nil {
 			return loadCounts{}, err
 		}
@@ -127,11 +182,7 @@ ON CONFLICT (report_id, mp_affiliation_id) DO NOTHING RETURNING id`,
 	return counts, nil
 }
 
-func loadMPContract(ctx context.Context, tx pgx.Tx, subjectID int64, expense types.ContractExpense) (loadCounts, error) {
-	key, err := sourceKey("mp-contract", expense)
-	if err != nil {
-		return loadCounts{}, err
-	}
+func loadMPContract(ctx context.Context, tx pgx.Tx, subjectID int64, key string, expense types.ContractExpense) (loadCounts, error) {
 	date, rawDate := sourceDate(expense.Date)
 	_, inserted, err := insertOrFindID(ctx, tx, `
 INSERT INTO mp_contract_expenses (report_subject_id, source_key, supplier, description, expense_date, source_date, total, is_refunded)

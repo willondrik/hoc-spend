@@ -38,6 +38,9 @@ func (l *Loader) LoadAdministrationReport(ctx context.Context, report types.Admi
 	if existing {
 		counts.ExistingRows++
 	}
+	if err := storeAdministrationReportSourceURLs(ctx, tx, reportID, report); err != nil {
+		return DetailLoadResult{}, fmt.Errorf("store administration report source URLs: %w", err)
+	}
 	for _, expense := range report.Contract.Entries {
 		loaded, err := loadAdministrationContract(ctx, tx, reportID, expense)
 		if err != nil {
@@ -63,6 +66,25 @@ func (l *Loader) LoadAdministrationReport(ctx context.Context, report types.Admi
 		return DetailLoadResult{}, fmt.Errorf("commit administration report: %w", err)
 	}
 	return detailResult(counts), nil
+}
+
+// storeAdministrationReportSourceURLs records the optional category detail
+// links for an administration quarter. Existing non-empty links are retained,
+// so reprocessing a report only fills source metadata that was previously
+// unavailable.
+func storeAdministrationReportSourceURLs(ctx context.Context, tx pgx.Tx, reportID int64, report types.AdminReport) error {
+	_, err := tx.Exec(ctx, `
+UPDATE disclosure_reports
+SET
+    travel_source_url = COALESCE(NULLIF(travel_source_url, ''), NULLIF($2, '')),
+    hospitality_source_url = COALESCE(NULLIF(hospitality_source_url, ''), NULLIF($3, '')),
+    contract_source_url = COALESCE(NULLIF(contract_source_url, ''), NULLIF($4, ''))
+WHERE id = $1`, reportID,
+		sourceText(report.Travel.URL), sourceText(report.Hospitality.URL), sourceText(report.Contract.URL))
+	if err != nil {
+		return fmt.Errorf("update report: %w", err)
+	}
+	return nil
 }
 
 func loadAdministrationContract(ctx context.Context, tx pgx.Tx, reportID int64, expense types.AdminContractExpense) (loadCounts, error) {

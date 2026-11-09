@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/willondrik/hoc-spend/pkg/scraper/load"
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 )
 
@@ -18,6 +19,8 @@ func TestRunOptionsValidate(t *testing.T) {
 		{name: "administration apply", opts: runOptions{domain: "administration", apply: true, limit: 1}, want: true},
 		{name: "officer apply", opts: runOptions{domain: "officer", apply: true, limit: 1}, want: true},
 		{name: "MP apply", opts: runOptions{domain: "mp", apply: true, limit: 1}, want: true},
+		{name: "all reports audit", opts: runOptions{domain: "all", apply: true, audit: true, allReports: true}, want: true},
+		{name: "audit without apply", opts: runOptions{domain: "all", audit: true, limit: 1}},
 		{name: "negative limit", opts: runOptions{domain: "administration", limit: -1}},
 		{name: "incomplete period", opts: runOptions{domain: "administration", fiscalYear: 2026, limit: 1}},
 		{name: "invalid quarter", opts: runOptions{domain: "administration", fiscalYear: 2026, fiscalQuarter: 5, limit: 1}},
@@ -74,5 +77,18 @@ func TestFilterFiscalPeriodAndLimitReports(t *testing.T) {
 	}
 	if got := limitReports(reports, 0); len(got) != 0 {
 		t.Fatalf("zero limit returned %#v, want no reports", got)
+	}
+}
+
+func TestMPProfilesFromSubjectsUsesUniqueProfileURLs(t *testing.T) {
+	subjects := []load.MPReportSubject{
+		{ProfileURL: " profile-a ", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}}},
+		{ProfileURL: "profile-a", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}}},
+		{ProfileURL: "profile-b", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Grace", LastName: "Hopper"}}},
+	}
+
+	profiles := mpProfilesFromSubjects(subjects)
+	if len(profiles) != 2 || profiles[0].ProfileURL != "profile-a" || profiles[1].ProfileURL != "profile-b" {
+		t.Fatalf("mpProfilesFromSubjects() = %#v, want unique trimmed profile URLs", profiles)
 	}
 }

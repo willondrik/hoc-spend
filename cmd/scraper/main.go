@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/willondrik/hoc-spend/db"
 	"github.com/willondrik/hoc-spend/pkg/scraper/extract"
 	"github.com/willondrik/hoc-spend/pkg/scraper/load"
@@ -33,6 +35,8 @@ type discovery struct {
 type runOptions struct {
 	domain        string
 	apply         bool
+	audit         bool
+	allReports    bool
 	limit         int
 	fiscalYear    int
 	fiscalQuarter int
@@ -42,6 +46,8 @@ func main() {
 	var (
 		domain        = flag.String("domain", "all", "report domain to inspect: all, mp, administration, or officer")
 		apply         = flag.Bool("apply", false, "fetch, parse, and load new reports")
+		audit         = flag.Bool("audit", false, "verify parsed and persisted category totals; requires -apply")
+		allReports    = flag.Bool("all", false, "with -apply, process discovered reports including existing reports; ignores -limit")
 		limit         = flag.Int("limit", 1, "maximum new reports to load with -apply; zero loads none")
 		fiscalYear    = flag.Int("fiscal-year", 0, "optional fiscal year filter; requires -fiscal-quarter")
 		fiscalQuarter = flag.Int("fiscal-quarter", 0, "optional fiscal quarter filter (1-4); requires -fiscal-year")
@@ -51,6 +57,8 @@ func main() {
 	opts := runOptions{
 		domain:        *domain,
 		apply:         *apply,
+		audit:         *audit,
+		allReports:    *allReports,
 		limit:         *limit,
 		fiscalYear:    *fiscalYear,
 		fiscalQuarter: *fiscalQuarter,
@@ -88,16 +96,24 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	var runErrors []error
 	for _, check := range selected {
-		if err := runDomain(ctx, loader, service, check, opts); err != nil {
-			log.Fatal(err)
+		if err := runDomain(ctx, database.Pool, loader, service, check, opts); err != nil {
+			log.Printf("%v", err)
+			runErrors = append(runErrors, err)
 		}
+	}
+	if len(runErrors) > 0 {
+		log.Fatal(errors.Join(runErrors...))
 	}
 }
 
 func (opts runOptions) validate() error {
 	if opts.limit < 0 {
 		return fmt.Errorf("-limit must be zero or greater")
+	}
+	if opts.audit && !opts.apply {
+		return fmt.Errorf("-audit requires -apply so persisted data can be verified")
 	}
 	if (opts.fiscalYear == 0) != (opts.fiscalQuarter == 0) {
 		return fmt.Errorf("-fiscal-year and -fiscal-quarter must be supplied together")
@@ -121,7 +137,7 @@ func selectDiscoveries(value string, checks []discovery) ([]discovery, error) {
 	return nil, fmt.Errorf("unsupported -domain %q; use all, mp, administration, or officer", value)
 }
 
-func runDomain(ctx context.Context, loader *load.Loader, service *extract.ExtractSvc, check discovery, opts runOptions) error {
+func runDomain(ctx context.Context, pool *pgxpool.Pool, loader *load.Loader, service *extract.ExtractSvc, check discovery, opts runOptions) error {
 	response, err := check.fetch()
 	if err != nil {
 		return fmt.Errorf("fetch %s report index: %w", check.name, err)
@@ -140,8 +156,9 @@ func runDomain(ctx context.Context, loader *load.Loader, service *extract.Extrac
 		return fmt.Errorf("compare %s reports with database: %w", check.name, err)
 	}
 
+	allReports := filterFiscalPeriod(reports.Reports, opts.fiscalYear, opts.fiscalQuarter)
 	newReports = filterFiscalPeriod(newReports, opts.fiscalYear, opts.fiscalQuarter)
-	fmt.Printf("%s: discovered=%d new=%d existing=%d", check.name, len(reports.Reports), len(newReports), len(reports.Reports)-len(newReports))
+	fmt.Printf("%s: discovered=%d new=%d existing=%d", check.name, len(allReports), len(newReports), len(allReports)-len(newReports))
 	if opts.fiscalYear != 0 {
 		fmt.Printf(" filtered=FY%d Q%d", opts.fiscalYear, opts.fiscalQuarter)
 	}
@@ -154,15 +171,33 @@ func runDomain(ctx context.Context, loader *load.Loader, service *extract.Extrac
 	}
 
 	selected := limitReports(newReports, opts.limit)
-	fmt.Printf("%s: applying=%d limit=%d\n", check.name, len(selected), opts.limit)
+	if opts.allReports {
+		selected = allReports
+	}
+	fmt.Printf("%s: applying=%d", check.name, len(selected))
+	if opts.allReports {
+		fmt.Print(" scope=all-discovered")
+	} else {
+		fmt.Printf(" limit=%d", opts.limit)
+	}
+	if opts.audit {
+		fmt.Print(" audit=enabled")
+	}
+	fmt.Println()
+	stats := domainRunStats{}
 	for _, report := range selected {
 		var result load.DetailLoadResult
+		var audit auditResult
 		switch check.domain {
 		case load.ReportDomainMP:
 			subjects, profiles, err := mpReportSubjects(service, report)
 			if err != nil {
 				return fmt.Errorf("build MP FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
 			}
+			if err := loader.ReuseExistingMPSubjectProfiles(ctx, report, subjects); err != nil {
+				return fmt.Errorf("reuse MP identities FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
+			}
+			profiles = mpProfilesFromSubjects(subjects)
 			profileResult, err := loader.InsertNewMPProfiles(ctx, profiles)
 			if err != nil {
 				return fmt.Errorf("load MP identities FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
@@ -170,6 +205,10 @@ func runDomain(ctx context.Context, loader *load.Loader, service *extract.Extrac
 			result, err = loader.LoadMPReport(ctx, report, subjects)
 			if err != nil {
 				return fmt.Errorf("load MP FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
+			}
+			if opts.audit {
+				audit = auditMPParsed(subjects)
+				audit.merge(auditMPPersisted(ctx, pool, report, subjects))
 			}
 			fmt.Printf("  MP identities FY%d Q%d received=%d inserted=%d existing=%d duplicates=%d\n", report.FiscalYear, report.FiscalQuarter, profileResult.Received, profileResult.Inserted, profileResult.Existing, profileResult.DuplicateInput)
 		case load.ReportDomainAdministration:
@@ -181,6 +220,10 @@ func runDomain(ctx context.Context, loader *load.Loader, service *extract.Extrac
 			if err != nil {
 				return fmt.Errorf("load Administration FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
 			}
+			if opts.audit {
+				audit = auditAdministrationParsed(parsed)
+				audit.merge(auditAdministrationPersisted(ctx, pool, report, parsed))
+			}
 		case load.ReportDomainOfficer:
 			subjects, err := officerReportSubjects(service, report)
 			if err != nil {
@@ -190,10 +233,29 @@ func runDomain(ctx context.Context, loader *load.Loader, service *extract.Extrac
 			if err != nil {
 				return fmt.Errorf("load Officer FY%d Q%d: %w", report.FiscalYear, report.FiscalQuarter, err)
 			}
+			if opts.audit {
+				audit = auditOfficerParsed(subjects)
+				audit.merge(auditOfficerPersisted(ctx, pool, report, subjects))
+			}
 		default:
 			return fmt.Errorf("apply is not implemented for %s reports", check.name)
 		}
-		fmt.Printf("  loaded FY%d Q%d reports=%d expenses=%d children=%d existing=%d\n", report.FiscalYear, report.FiscalQuarter, result.Reports, result.Expenses, result.ChildRecords, result.ExistingRows)
+		stats.add(result, audit)
+		fmt.Printf("  loaded FY%d Q%d reports=%d subjects=%d expenses=%d children=%d existing=%d\n", report.FiscalYear, report.FiscalQuarter, result.Reports, result.Subjects, result.Expenses, result.ChildRecords, result.ExistingRows)
+		if opts.audit {
+			fmt.Printf("  audit FY%d Q%d %s\n", report.FiscalYear, report.FiscalQuarter, audit)
+			for _, detail := range audit.Details {
+				fmt.Printf("    audit failure: %s\n", detail)
+			}
+		}
+	}
+	fmt.Printf("%s: processed=%d reports=%d subjects=%d expenses=%d children=%d existing=%d", check.name, stats.Processed, stats.Reports, stats.Subjects, stats.Expenses, stats.ChildRecords, stats.ExistingRows)
+	if opts.audit {
+		fmt.Printf(" audit-checks=%d audit-failed=%d", stats.Audit.Checked, stats.Audit.Failed)
+	}
+	fmt.Println()
+	if opts.audit && stats.Audit.Failed > 0 {
+		return fmt.Errorf("audit failed for %s: %d of %d checks failed", check.name, stats.Audit.Failed, stats.Audit.Checked)
 	}
 	return nil
 }
@@ -269,6 +331,23 @@ func mpExpenses(service *extract.ExtractSvc, summary types.MPExpenseSummary) (ty
 		TravelExpenses:         travel,
 		TravelExpensesURL:      strings.TrimSpace(summary.TravelExpenses.URL),
 	}, nil
+}
+
+func mpProfilesFromSubjects(subjects []load.MPReportSubject) []*types.MPDetails {
+	profiles := make([]*types.MPDetails, 0, len(subjects))
+	seen := make(map[string]struct{}, len(subjects))
+	for _, subject := range subjects {
+		profileURL := strings.TrimSpace(subject.ProfileURL)
+		if profileURL == "" {
+			continue
+		}
+		if _, exists := seen[profileURL]; exists {
+			continue
+		}
+		profiles = append(profiles, &types.MPDetails{Name: subject.Summary.Name, ProfileURL: profileURL})
+		seen[profileURL] = struct{}{}
+	}
+	return profiles
 }
 
 func mpCategory[T any](service *extract.ExtractSvc, sourceURL string, parse func(*goquery.Document) ([]T, error)) ([]T, error) {

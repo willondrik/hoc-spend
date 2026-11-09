@@ -41,6 +41,21 @@ func sourceKey(namespace string, value any) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+// occurrenceSourceKey preserves a legacy/base source key for the first
+// occurrence and derives a stable distinct key for repeated identical rows.
+func occurrenceSourceKey(baseKey string, occurrence int) (string, error) {
+	if occurrence < 1 {
+		return "", fmt.Errorf("source-key occurrence must be positive")
+	}
+	if occurrence == 1 {
+		return baseKey, nil
+	}
+	return sourceKey("source-key-occurrence", struct {
+		BaseKey    string `json:"baseKey"`
+		Occurrence int    `json:"occurrence"`
+	}{BaseKey: baseKey, Occurrence: occurrence})
+}
+
 func sourceText(value string) string {
 	return strings.TrimSpace(value)
 }

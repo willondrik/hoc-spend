@@ -242,6 +242,12 @@ interface AdminTravelExpense {
 
 interface AdministrationReportDetail extends ExpenditureReport {
   domain: "administration";
+  /** Official House of Commons Administration detail-report URLs, when published. */
+  categoryUrls: {
+    contract: string | null;
+    hospitality: string | null;
+    travel: string | null;
+  };
   contractExpenses: AdminContractExpense[];
   hospitalityExpenses: AdminHospitalityExpense[];
   travelExpenses: AdminTravelExpense[];
@@ -249,6 +255,7 @@ interface AdministrationReportDetail extends ExpenditureReport {
 ```
 
 `eventId` is the House Administration’s source event identifier and is the preferred display/reference value for an Administration event.
+`categoryUrls` is nullable per category because the House can publish no detail link for a zero-spend category. In persistence, these Administration links are report-level fields; Officer category URLs remain subject-level because they vary by officer.
 
 ## House Officer summaries and detail
 
