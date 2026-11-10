@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS administration_hospitality_suppliers (
 CREATE TABLE IF NOT EXISTS administration_travel_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,
     event_id TEXT NOT NULL,
     traveller_person_id BIGINT REFERENCES people(id) ON DELETE SET NULL,
     purpose TEXT NOT NULL DEFAULT '',
@@ -267,7 +268,7 @@ CREATE TABLE IF NOT EXISTS administration_travel_expenses (
     CONSTRAINT administration_travel_expenses_period_order CHECK (
         period_start IS NULL OR period_end IS NULL OR period_start <= period_end
     ),
-    CONSTRAINT administration_travel_expenses_report_event_key UNIQUE (report_id, event_id)
+    CONSTRAINT administration_travel_expenses_report_source_key UNIQUE (report_id, source_key)
 );
 
 CREATE TABLE IF NOT EXISTS administration_travel_places (
@@ -433,5 +434,56 @@ LEFT JOIN contract_totals ON contract_totals.report_subject_id = report_subjects
 LEFT JOIN hospitality_totals ON hospitality_totals.report_subject_id = report_subjects.id
 LEFT JOIN travel_totals ON travel_totals.report_subject_id = report_subjects.id
 WHERE disclosure_reports.domain IN ('mp', 'officer');
+
+-- Person-centric lookup totals. Subject totals and traveller totals are kept
+-- separate because a person's own travel may also be included in their MP or
+-- officer subject disclosure; summing all roles together would double-count.
+CREATE OR REPLACE VIEW person_expense_totals AS
+WITH person_amounts AS (
+    SELECT mps.person_id, 'mp_subject'::TEXT AS role, report_subjects.travel_total + report_subjects.hospitality_total + report_subjects.contract_total AS amount
+    FROM report_subjects
+    JOIN mp_affiliations ON mp_affiliations.id = report_subjects.mp_affiliation_id
+    JOIN mps ON mps.id = mp_affiliations.mp_id
+    WHERE report_subjects.subject_kind = 'mp'
+
+    UNION ALL
+
+    SELECT report_subjects.person_id, 'officer_subject'::TEXT, report_subjects.travel_total + report_subjects.hospitality_total + report_subjects.contract_total
+    FROM report_subjects
+    WHERE report_subjects.subject_kind = 'officer'
+      AND report_subjects.person_id IS NOT NULL
+
+    UNION ALL
+
+    SELECT mp_travelers.person_id, 'mp_traveller'::TEXT, mp_travel_expenses.total_cost
+    FROM mp_travelers
+    JOIN mp_travel_expenses ON mp_travel_expenses.id = mp_travelers.travel_expense_id
+    WHERE mp_travelers.person_id IS NOT NULL
+
+    UNION ALL
+
+    SELECT officer_travel_expenses.traveller_person_id, 'officer_traveller'::TEXT, officer_travel_expenses.total_cost
+    FROM officer_travel_expenses
+    WHERE officer_travel_expenses.traveller_person_id IS NOT NULL
+
+    UNION ALL
+
+    SELECT administration_travel_expenses.traveller_person_id, 'administration_traveller'::TEXT, administration_travel_expenses.total_cost
+    FROM administration_travel_expenses
+    WHERE administration_travel_expenses.traveller_person_id IS NOT NULL
+)
+SELECT
+    people.id AS person_id,
+    people.first_name,
+    people.last_name,
+    concat_ws(' ', people.first_name, people.last_name) AS full_name,
+    COALESCE(SUM(amount) FILTER (WHERE role = 'mp_subject'), 0)::NUMERIC(14, 2) AS mp_subject_total,
+    COALESCE(SUM(amount) FILTER (WHERE role = 'officer_subject'), 0)::NUMERIC(14, 2) AS officer_subject_total,
+    COALESCE(SUM(amount) FILTER (WHERE role = 'mp_traveller'), 0)::NUMERIC(14, 2) AS mp_traveller_total,
+    COALESCE(SUM(amount) FILTER (WHERE role = 'officer_traveller'), 0)::NUMERIC(14, 2) AS officer_traveller_total,
+    COALESCE(SUM(amount) FILTER (WHERE role = 'administration_traveller'), 0)::NUMERIC(14, 2) AS administration_traveller_total
+FROM people
+LEFT JOIN person_amounts ON person_amounts.person_id = people.id
+GROUP BY people.id, people.first_name, people.last_name;
 
 COMMIT;

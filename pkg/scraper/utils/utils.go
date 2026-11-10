@@ -317,15 +317,7 @@ func Name(fullName string, mp *types.MPExpenseSummary) {
 		lastName = "Vacant"
 
 	default:
-		var formattedStr string
-
-		if strings.Contains(fullName, "Right Hon. ") {
-			formattedStr = strings.ReplaceAll(fullName, "Right Hon. ", "")
-		} else if strings.Contains(fullName, "Hon. ") {
-			formattedStr = strings.ReplaceAll(fullName, "Hon. ", "")
-		} else {
-			formattedStr = fullName
-		}
+		formattedStr := stripHonorific(strings.TrimSpace(fullName))
 
 		// Check if the name contains a comma before splitting
 		if strings.Contains(formattedStr, ", ") {
@@ -348,6 +340,10 @@ func Name(fullName string, mp *types.MPExpenseSummary) {
 // TravellerNameAndType extracts the traveller type and name from a string
 // TODO: Refactor - some of this is unnecessary
 func TravellerNameAndType(travellerDetails string) (string, types.PersonName) {
+	travellerDetails = strings.TrimSpace(travellerDetails)
+	if isGenericTravellerLabel(travellerDetails) {
+		return canonicalTravellerLabel(travellerDetails), types.PersonName{}
+	}
 
 	// Check if it contains a name in parentheses
 	if strings.Contains(travellerDetails, "(") && strings.Contains(travellerDetails, ")") {
@@ -356,27 +352,12 @@ func TravellerNameAndType(travellerDetails string) (string, types.PersonName) {
 
 		// Clean and extract name
 		nameRaw := strings.TrimSpace(strings.TrimRight(split[1], ")"))
-		nameSlice := strings.Split(nameRaw, ", ")
-
-		if len(nameSlice) == 2 {
-			return travellerType, types.PersonName{
-				FirstName: strings.TrimSpace(nameSlice[1]),
-				LastName:  strings.TrimSpace(nameSlice[0]),
-			}
-		}
-
-		// Fallback if name doesn't split as expected
-		return travellerType, types.PersonName{
-			FirstName: "",
-			LastName:  nameRaw,
-		}
+		return travellerType, travellerPersonName(nameRaw)
 	}
 
-	// No parentheses - treat whole string as name or type
-	return "Unknown", types.PersonName{
-		FirstName: "",
-		LastName:  strings.TrimSpace(travellerDetails),
-	}
+	// No parentheses: source pages sometimes provide a real display name without
+	// a type wrapper. Preserve it as a person when it has a usable name shape.
+	return "Unknown", travellerPersonName(travellerDetails)
 }
 
 // ExpenseToDecimal converts a string representation of an expense to a Money value.
@@ -527,32 +508,46 @@ func FlightPointsToFloat(flightPoints string) (float64, error) {
 // It handles cases where the name is in parentheses or contains "Right Hon." or "Hon."
 // It also handles cases where the name is "Not Listed" or empty
 func TravellerName(name string) types.PersonName {
-	name = strings.TrimSpace(name)
-	name = strings.ReplaceAll(name, "Right Hon. ", "")
-	name = strings.ReplaceAll(name, "Hon. ", "")
+	return travellerPersonName(name)
+}
 
-	if strings.Contains(name, "Not Listed") || name == "" {
-		return types.PersonName{
-			FirstName: "Not Listed",
-			LastName:  "Not Listed",
-		}
+func travellerPersonName(name string) types.PersonName {
+	name = stripHonorific(strings.TrimSpace(name))
+	if name == "" || strings.EqualFold(name, "Not Listed") || isGenericTravellerLabel(name) {
+		return types.PersonName{}
 	}
 
-	// Check if the name contains a comma before splitting
-	if strings.Contains(name, ", ") {
-		nameArr := strings.Split(name, ", ")
-		return types.PersonName{
-			FirstName: nameArr[1],
-			LastName:  nameArr[0],
-		}
-	} else {
-		// Handle case where name doesn't have a comma
-		// Set the entire name as LastName
-		return types.PersonName{
-			FirstName: "",
-			LastName:  name,
+	if comma := strings.Index(name, ","); comma >= 0 {
+		lastName := strings.TrimSpace(name[:comma])
+		firstName := strings.TrimSpace(name[comma+1:])
+		return types.PersonName{FirstName: firstName, LastName: lastName}
+	}
+
+	parts := strings.Fields(name)
+	if len(parts) < 2 {
+		return types.PersonName{LastName: name}
+	}
+	return types.PersonName{FirstName: parts[0], LastName: strings.Join(parts[1:], " ")}
+}
+
+func stripHonorific(name string) string {
+	for _, honorific := range []string{"The Right Hon.", "Right Hon.", "The Hon.", "Hon.", "Honourable", "Honorable"} {
+		if len(name) > len(honorific) && strings.EqualFold(name[:len(honorific)], honorific) && unicode.IsSpace(rune(name[len(honorific)])) {
+			return strings.TrimSpace(name[len(honorific):])
 		}
 	}
+	return name
+}
+
+func isGenericTravellerLabel(value string) bool {
+	return strings.EqualFold(strings.Join(strings.Fields(value), " "), "designated traveller")
+}
+
+func canonicalTravellerLabel(value string) string {
+	if isGenericTravellerLabel(value) {
+		return "Designated Traveller"
+	}
+	return strings.TrimSpace(value)
 }
 
 // City formats the city name for proper punctuation

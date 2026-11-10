@@ -186,13 +186,18 @@ supported. Load MP profiles first with `InsertNewMPProfiles`.
 
 Most source detail rows receive a deterministic SHA-256 `source_key`, scoped
 to their parent report or subject. This protects against duplicate writes if a
-report is retried after an interruption. Administration hospitality/travel use
-their House-provided `event_id`; MP travel uses the parsed source sequence.
+report is retried after an interruption. Administration hospitality retains its
+House-provided `event_id`; Administration travel also retains that published
+reference value but uses an occurrence-aware `source_key` because the House can
+reuse an event ID within one quarterly report. MP travel uses the parsed source
+sequence.
 
 If the database was created using an older version of the bootstrap schema,
 apply [`db/002_add_idempotent_load_keys.sql`](./db/002_add_idempotent_load_keys.sql)
 and then [`db/003_add_administration_and_officer_report_links.sql`](./db/003_add_administration_and_officer_report_links.sql)
 and then [`db/004_add_report_subject_reconciliation.sql`](./db/004_add_report_subject_reconciliation.sql)
+and then [`db/005_normalize_traveller_identities.sql`](./db/005_normalize_traveller_identities.sql)
+and then [`db/006_add_administration_travel_source_keys.sql`](./db/006_add_administration_travel_source_keys.sql)
 once before invoking the detail loaders. The latter adds the
 `report_subject_expense_reconciliation` view; it compares MP/Officer source
 summary totals with their individually disclosed detail-row totals. The prior
@@ -200,6 +205,14 @@ link migration adds nullable category detail URLs without backfilling data:
 Administration URLs belong to each report, while Officer URLs belong to each
 report subject. A new local database initialized with
 `db/001_initial_schema.sql` already has these columns, constraints, and view.
+
+`db/005_normalize_traveller_identities.sql` also repairs confirmed historical
+traveller identity splits, removes generic `Designated Traveller` pseudo-people,
+and adds `person_expense_totals`. The lookup view exposes MP/officer subject
+totals and traveller totals in separate columns, avoiding misleading
+double-counting when a person's own travel appears in their subject disclosure.
+`db/006_add_administration_travel_source_keys.sql` preserves separate rows when
+the House reuses an Administration travel event ID within a reporting period.
 
 The expected client/API payloads are documented in [`docs/frontend-data-contract.md`](./docs/frontend-data-contract.md).
 
@@ -215,7 +228,10 @@ go run ./cmd/scraper -apply -all -audit
 The command prints discovered/new/existing and processed row counts for MPs,
 House Administration, and House Officers. For MP and Officer reports it checks
 each source summary category total against the parsed detail-item aggregate and
-then checks the persisted summary totals against the database aggregates.
+then checks the persisted summary totals against the database aggregates. The
+House independently publishes summaries and detail pages; when they disagree,
+the command reports an audit warning but does not fail the scrape. Database
+query/persistence failures remain audit failures.
 Administration currently has no parsed source summary totals, so its audit
 verifies parsed category-row counts against persisted category-row counts.
 The command finishes all reports in a domain before returning a non-zero status

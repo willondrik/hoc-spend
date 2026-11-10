@@ -42,6 +42,27 @@ func TestAllMpExpensesClosesSuccessfulResponsesWhenAnotherCategoryFails(t *testi
 	}
 }
 
+func TestAllMpExpensesSkipsEmptyCategoryURLs(t *testing.T) {
+	var requestCount atomic.Int32
+	manager := requests.NewRequestManagerWithClient(&http.Client{Transport: testRoundTripper(func(*http.Request) (*http.Response, error) {
+		requestCount.Add(1)
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	})})
+	service := NewSvc(manager)
+
+	responses, err := service.AllMpExpenses(types.ExpenseURLs{Travel: "https://example.test/travel"})
+	if err != nil {
+		t.Fatalf("AllMpExpenses() error = %v", err)
+	}
+	defer responses.Travel.Body.Close()
+	if responses.Contract != nil || responses.Hospitality != nil || responses.Travel == nil {
+		t.Fatalf("unexpected responses: %#v", responses)
+	}
+	if requestCount.Load() != 1 {
+		t.Fatalf("requests = %d, want 1", requestCount.Load())
+	}
+}
+
 type testRoundTripper func(*http.Request) (*http.Response, error)
 
 func (fn testRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {

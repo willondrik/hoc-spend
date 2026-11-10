@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/willondrik/hoc-spend/pkg/scraper/requests"
@@ -108,6 +109,9 @@ func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseRespon
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
+		if strings.TrimSpace(h.Contract) == "" {
+			return
+		}
 
 		expenses, err := s.rm.Get(h.Contract)
 		if err != nil {
@@ -121,6 +125,9 @@ func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseRespon
 
 	go func() {
 		defer wg.Done()
+		if strings.TrimSpace(h.Hospitality) == "" {
+			return
+		}
 
 		expenses, err := s.rm.Get(h.Hospitality)
 		if err != nil {
@@ -134,6 +141,9 @@ func (s *ExtractSvc) AllMpExpenses(h types.ExpenseURLs) (*types.RawExpenseRespon
 
 	go func() {
 		defer wg.Done()
+		if strings.TrimSpace(h.Travel) == "" {
+			return
+		}
 
 		expenses, err := s.rm.Get(h.Travel)
 		if err != nil {

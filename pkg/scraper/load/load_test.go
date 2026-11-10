@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 )
 
@@ -194,6 +195,48 @@ func TestOccurrenceSourceKeyPreservesFirstAndSeparatesDuplicates(t *testing.T) {
 	}
 	if _, err := occurrenceSourceKey(baseKey, 0); err == nil {
 		t.Fatal("occurrenceSourceKey() error = nil for zero occurrence")
+	}
+}
+
+func TestOccurrenceSourceKeySeparatesRepeatedAdministrationSourceRows(t *testing.T) {
+	contract := types.AdminContractExpense{
+		Suppliers:             []string{"Example Supplier"},
+		Description:           "Example contract",
+		ContractPeriod:        types.DateRange{StartDate: "2026-04-01", EndDate: "2026-06-30"},
+		OriginalContractValue: decimal.RequireFromString("100.00"),
+		AmendedContractValue:  decimal.RequireFromString("100.00"),
+	}
+	baseKey, err := sourceKey("administration-contract", contract)
+	if err != nil {
+		t.Fatalf("sourceKey() error = %v", err)
+	}
+	first, err := occurrenceSourceKey(baseKey, 1)
+	if err != nil {
+		t.Fatalf("first occurrenceSourceKey() error = %v", err)
+	}
+	second, err := occurrenceSourceKey(baseKey, 2)
+	if err != nil {
+		t.Fatalf("second occurrenceSourceKey() error = %v", err)
+	}
+	if first == second {
+		t.Fatal("repeated Administration contract rows received the same source key")
+	}
+
+	travel := types.AdminTravelExpense{EventID: "reused-event-id", Purpose: "Example travel", TotalCost: decimal.RequireFromString("100.00")}
+	travelKey, err := sourceKey("administration-travel", travel)
+	if err != nil {
+		t.Fatalf("travel sourceKey() error = %v", err)
+	}
+	travelFirst, err := occurrenceSourceKey(travelKey, 1)
+	if err != nil {
+		t.Fatalf("first travel occurrenceSourceKey() error = %v", err)
+	}
+	travelSecond, err := occurrenceSourceKey(travelKey, 2)
+	if err != nil {
+		t.Fatalf("second travel occurrenceSourceKey() error = %v", err)
+	}
+	if travelFirst == travelSecond {
+		t.Fatal("repeated Administration travel rows received the same source key")
 	}
 }
 

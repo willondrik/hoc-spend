@@ -28,10 +28,10 @@ func TestAuditMPParsed(t *testing.T) {
 		t.Fatalf("auditMPParsed() = %+v, want 3 passing checks", got)
 	}
 	subject.Summary.TravelExpenses.TotalAmount = decimal.RequireFromString("31.00")
-	if got := auditMPParsed(report, []load.MPReportSubject{subject}); got.Checked != 3 || got.Failed != 1 {
-		t.Fatalf("auditMPParsed() mismatch = %+v, want one failed check", got)
-	} else if len(got.Details) != 1 || !strings.Contains(got.Details[0], "FY2026 Q1") {
-		t.Fatalf("auditMPParsed() mismatch details = %#v, want fiscal-period context", got.Details)
+	if got := auditMPParsed(report, []load.MPReportSubject{subject}); got.Checked != 3 || got.Failed != 0 || got.Warnings != 1 {
+		t.Fatalf("auditMPParsed() mismatch = %+v, want one warning", got)
+	} else if len(got.WarningDetails) != 1 || !strings.Contains(got.WarningDetails[0], "FY2026 Q1") {
+		t.Fatalf("auditMPParsed() mismatch warnings = %#v, want fiscal-period context", got.WarningDetails)
 	}
 }
 
@@ -54,7 +54,7 @@ func TestAuditOfficerParsed(t *testing.T) {
 		t.Fatalf("auditOfficerParsed() = %+v, want 3 passing checks", got)
 	}
 	subject.Summary.ContractExpenses.TotalAmount = decimal.RequireFromString("9.99")
-	if got := auditOfficerParsed(report, []load.OfficerReportSubject{subject}); got.Checked != 3 || got.Failed != 1 {
-		t.Fatalf("auditOfficerParsed() mismatch = %+v, want one failed check", got)
+	if got := auditOfficerParsed(report, []load.OfficerReportSubject{subject}); got.Checked != 3 || got.Failed != 0 || got.Warnings != 1 {
+		t.Fatalf("auditOfficerParsed() mismatch = %+v, want one warning", got)
 	}
 }

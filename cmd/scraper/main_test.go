@@ -57,6 +57,17 @@ func TestMPSourceIdentity(t *testing.T) {
 	if got == changedRiding {
 		t.Fatal("identities for different ridings must not be merged")
 	}
+	changedReport := base
+	changedReport.URL = "https://example.test/report?summaryId=republished"
+	changedReport.FiscalYear = 2025
+	changedReport.FiscalQuarter = 4
+	changedReportIdentity, err := mpSourceIdentity(changedReport)
+	if err != nil {
+		t.Fatalf("mpSourceIdentity(changed report) error = %v", err)
+	}
+	if got != changedReportIdentity {
+		t.Fatalf("identity changed from %q to %q when only report metadata changed", got, changedReportIdentity)
+	}
 }
 
 func TestFilterFiscalPeriodAndLimitReports(t *testing.T) {

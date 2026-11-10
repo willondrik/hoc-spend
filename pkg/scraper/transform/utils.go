@@ -3,15 +3,19 @@ package transform
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 )
 
 func removeHonorifics(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, "Right Hon. ", "")
-	s = strings.ReplaceAll(s, "Hon. ", "")
-	return strings.TrimSpace(s)
+	for _, honorific := range []string{"The Right Hon.", "Right Hon.", "The Hon.", "Hon.", "Honourable", "Honorable"} {
+		if len(s) > len(honorific) && strings.EqualFold(s[:len(honorific)], honorific) && unicode.IsSpace(rune(s[len(honorific)])) {
+			return strings.TrimSpace(s[len(honorific):])
+		}
+	}
+	return s
 }
 
 // parseCommaName parses names of the form "Last, First".
@@ -35,8 +39,10 @@ func parseCommaName(name string) types.PersonName {
 }
 
 // parseTravellerName supports entries like:
-//   "Type (Last, First)"
-//   "Last, First"
+//
+//	"Type (Last, First)"
+//	"Last, First"
+//
 // and strips honorifics.
 func parseTravellerName(raw string) (types.PersonName, error) {
 	raw = strings.TrimSpace(raw)
@@ -86,4 +92,3 @@ func parsePlacesVisited(s string) []string {
 	}
 	return []string{s}
 }
-

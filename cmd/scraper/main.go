@@ -69,7 +69,7 @@ func main() {
 
 	timeout := 2 * time.Minute
 	if opts.apply {
-		timeout = 30 * time.Minute
+		timeout = 2 * time.Hour
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -247,11 +247,14 @@ func runDomain(ctx context.Context, pool *pgxpool.Pool, loader *load.Loader, ser
 			for _, detail := range audit.Details {
 				fmt.Printf("    audit failure: %s\n", detail)
 			}
+			for _, detail := range audit.WarningDetails {
+				fmt.Printf("    audit warning: %s\n", detail)
+			}
 		}
 	}
 	fmt.Printf("%s: processed=%d reports=%d subjects=%d expenses=%d children=%d existing=%d", check.name, stats.Processed, stats.Reports, stats.Subjects, stats.Expenses, stats.ChildRecords, stats.ExistingRows)
 	if opts.audit {
-		fmt.Printf(" audit-checks=%d audit-failed=%d", stats.Audit.Checked, stats.Audit.Failed)
+		fmt.Printf(" audit-checks=%d audit-failed=%d audit-warnings=%d", stats.Audit.Checked, stats.Audit.Failed, stats.Audit.Warnings)
 	}
 	fmt.Println()
 	if opts.audit && stats.Audit.Failed > 0 {
@@ -287,7 +290,7 @@ func mpReportSubjects(service *extract.ExtractSvc, report types.ExpenditureRepor
 	subjects := make([]load.MPReportSubject, 0, len(summaries))
 	profiles := make([]*types.MPDetails, 0, len(summaries))
 	seen := make(map[string]struct{}, len(summaries))
-	for _, summary := range summaries {
+	for index, summary := range summaries {
 		if summary == nil {
 			return nil, nil, fmt.Errorf("report contains a nil MP summary")
 		}
@@ -300,6 +303,9 @@ func mpReportSubjects(service *extract.ExtractSvc, report types.ExpenditureRepor
 		if err != nil {
 			return nil, nil, fmt.Errorf("fetch %s %s details: %w", summary.Name.FirstName, summary.Name.LastName, err)
 		}
+		if (index+1)%25 == 0 || index+1 == len(summaries) {
+			fmt.Printf("  fetched MP details %d/%d\n", index+1, len(summaries))
+		}
 		subjects = append(subjects, load.MPReportSubject{ProfileURL: identity, Summary: *summary, Expenses: expenses})
 		if _, exists := seen[identity]; !exists {
 			profiles = append(profiles, &types.MPDetails{Name: summary.Name, ProfileURL: identity})
@@ -310,15 +316,25 @@ func mpReportSubjects(service *extract.ExtractSvc, report types.ExpenditureRepor
 }
 
 func mpExpenses(service *extract.ExtractSvc, summary types.MPExpenseSummary) (types.MPExpenses, error) {
-	contracts, err := mpCategory(service, summary.ContractExpenses.URL, transform.MpContractExpenses)
+	responses, err := service.AllMpExpenses(types.ExpenseURLs{
+		Contract:    strings.TrimSpace(summary.ContractExpenses.URL),
+		Hospitality: strings.TrimSpace(summary.HospitalityExpenses.URL),
+		Travel:      strings.TrimSpace(summary.TravelExpenses.URL),
+	})
+	if err != nil {
+		return types.MPExpenses{}, fmt.Errorf("fetch category pages: %w", err)
+	}
+	defer closeResponseBodies(responses)
+
+	contracts, err := mpResponseCategory(responses.Contract, transform.MpContractExpenses)
 	if err != nil {
 		return types.MPExpenses{}, fmt.Errorf("contracts: %w", err)
 	}
-	hospitality, err := mpCategory(service, summary.HospitalityExpenses.URL, transform.MpHospitalityExpenses)
+	hospitality, err := mpResponseCategory(responses.Hospitality, transform.MpHospitalityExpenses)
 	if err != nil {
 		return types.MPExpenses{}, fmt.Errorf("hospitality: %w", err)
 	}
-	travel, err := mpCategory(service, summary.TravelExpenses.URL, transform.MpTravelExpenses)
+	travel, err := mpResponseCategory(responses.Travel, transform.MpTravelExpenses)
 	if err != nil {
 		return types.MPExpenses{}, fmt.Errorf("travel: %w", err)
 	}
@@ -331,6 +347,24 @@ func mpExpenses(service *extract.ExtractSvc, summary types.MPExpenseSummary) (ty
 		TravelExpenses:         travel,
 		TravelExpensesURL:      strings.TrimSpace(summary.TravelExpenses.URL),
 	}, nil
+}
+
+func mpResponseCategory[T any](response *http.Response, parse func(*goquery.Document) ([]T, error)) ([]T, error) {
+	if response == nil {
+		return []T{}, nil
+	}
+	doc, err := goquery.NewDocumentFromReader(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("parse page: %w", err)
+	}
+	entries, err := parse(doc)
+	if err != nil {
+		return nil, fmt.Errorf("transform page: %w", err)
+	}
+	if entries == nil {
+		return []T{}, nil
+	}
+	return entries, nil
 }
 
 func mpProfilesFromSubjects(subjects []load.MPReportSubject) []*types.MPDetails {
@@ -387,11 +421,12 @@ func mpSourceIdentity(summary types.MPExpenseSummary) (string, error) {
 	if riding == "" {
 		return "", fmt.Errorf("MP source identity requires a constituency for %s %s", summary.Name.FirstName, summary.Name.LastName)
 	}
-	reportURL := strings.TrimSpace(summary.URL)
-	if reportURL == "" || summary.FiscalYear == 0 || summary.FiscalQuarter == 0 {
-		return "", fmt.Errorf("MP source identity requires a report URL and fiscal period")
-	}
-	payload := fmt.Sprintf("%s\x1f%d\x1f%d\x1f%s\x1f%s\x1f%s", reportURL, summary.FiscalYear, summary.FiscalQuarter, first, last, riding)
+	// The House summaryId embedded in a quarterly report URL changes when the
+	// source republishes the report. Including that URL or fiscal period here
+	// would create a second durable MP identity for the same named MP/riding on
+	// each re-scrape. The fallback therefore remains stable across periods while
+	// retaining constituency to avoid merging same-name MPs from different ridings.
+	payload := fmt.Sprintf("%s\x1f%s\x1f%s", first, last, riding)
 	digest := sha256.Sum256([]byte(payload))
 	return "source://ourcommons.ca/proactivedisclosure/mp/" + hex.EncodeToString(digest[:]), nil
 }

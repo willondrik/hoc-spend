@@ -850,7 +850,7 @@ func MpTravelExpenses(doc *goquery.Document) ([]*types.TravelExpense, error) {
 			}
 
 			// Skip invalid rows
-			if cells.Length() == 0 || strings.Contains(strings.ToLower(cells.Text()), "traveller") || strings.TrimSpace(cells.Eq(0).Text()) == "" {
+			if cells.Length() == 0 || strings.EqualFold(strings.TrimSpace(cells.Eq(0).Text()), "date") || strings.TrimSpace(cells.Eq(0).Text()) == "" {
 				if debug {
 					fmt.Println("Skipping invalid or header row")
 				}

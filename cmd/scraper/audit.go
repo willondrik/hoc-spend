@@ -12,9 +12,11 @@ import (
 )
 
 type auditResult struct {
-	Checked int
-	Failed  int
-	Details []string
+	Checked        int
+	Failed         int
+	Warnings       int
+	Details        []string
+	WarningDetails []string
 }
 
 func (r *auditResult) check(condition bool, detail string) {
@@ -25,17 +27,33 @@ func (r *auditResult) check(condition bool, detail string) {
 	}
 }
 
+// warn records a source reconciliation discrepancy without treating it as a
+// scraper failure. House quarterly summary totals and linked detail pages are
+// independently published and are known not to reconcile for some periods.
+func (r *auditResult) warn(condition bool, detail string) {
+	r.Checked++
+	if !condition {
+		r.Warnings++
+		r.WarningDetails = append(r.WarningDetails, detail)
+	}
+}
+
 func (r *auditResult) merge(other auditResult) {
 	r.Checked += other.Checked
 	r.Failed += other.Failed
+	r.Warnings += other.Warnings
 	r.Details = append(r.Details, other.Details...)
+	r.WarningDetails = append(r.WarningDetails, other.WarningDetails...)
 }
 
 func (r auditResult) String() string {
-	if r.Failed == 0 {
+	if r.Failed == 0 && r.Warnings == 0 {
 		return fmt.Sprintf("checks=%d status=PASS", r.Checked)
 	}
-	return fmt.Sprintf("checks=%d failed=%d status=FAIL", r.Checked, r.Failed)
+	if r.Failed == 0 {
+		return fmt.Sprintf("checks=%d warnings=%d status=PASS", r.Checked, r.Warnings)
+	}
+	return fmt.Sprintf("checks=%d failed=%d warnings=%d status=FAIL", r.Checked, r.Failed, r.Warnings)
 }
 
 type domainRunStats struct {
@@ -87,7 +105,7 @@ func auditAdministrationParsed(report types.AdminReport) auditResult {
 }
 
 func (r *auditResult) checkTotal(scope, subject, category string, expected, actual decimal.Decimal) {
-	r.check(expected.Equal(actual), fmt.Sprintf("%s %s category=%s summary=%s items=%s delta=%s", scope, subject, category, expected.StringFixed(2), actual.StringFixed(2), actual.Sub(expected).StringFixed(2)))
+	r.warn(expected.Equal(actual), fmt.Sprintf("%s %s category=%s summary=%s items=%s delta=%s", scope, subject, category, expected.StringFixed(2), actual.StringFixed(2), actual.Sub(expected).StringFixed(2)))
 }
 
 func mpSubjectLabel(subject load.MPReportSubject) string {
@@ -161,7 +179,12 @@ func auditMPPersisted(ctx context.Context, pool *pgxpool.Pool, report types.Expe
 }
 
 func auditOfficerPersisted(ctx context.Context, pool *pgxpool.Pool, report types.ExpenditureReport, subjects []load.OfficerReportSubject) auditResult {
-	return auditPersistedSubjects(ctx, pool, load.ReportDomainOfficer, report, len(subjects), nil)
+	uniquePeople := make(map[string]struct{}, len(subjects))
+	for _, subject := range subjects {
+		name := subject.Summary.Name
+		uniquePeople[strings.ToLower(strings.TrimSpace(name.FirstName))+"\x1f"+strings.ToLower(strings.TrimSpace(name.LastName))] = struct{}{}
+	}
+	return auditPersistedSubjects(ctx, pool, load.ReportDomainOfficer, report, len(uniquePeople), nil)
 }
 
 func auditPersistedSubjects(ctx context.Context, pool *pgxpool.Pool, domain load.ReportDomain, report types.ExpenditureReport, expectedSubjects int, profileURLs []string) auditResult {
@@ -238,7 +261,7 @@ WHERE disclosure_reports.domain = $1
 		result.check(false, fmt.Sprintf("persisted %s total iteration error=%v", domain, err))
 		return result
 	}
-	result.check(!persistedMismatch, fmt.Sprintf("persisted %s category totals disagree with detail rows", domain))
+	result.warn(!persistedMismatch, fmt.Sprintf("persisted %s source summary totals disagree with detail rows", domain))
 	return result
 }
 
@@ -246,13 +269,13 @@ func (r *auditResult) appendPersistedMismatch(domain load.ReportDomain, subjectI
 	expected, expectedErr := decimal.NewFromString(expectedText)
 	actual, actualErr := decimal.NewFromString(actualText)
 	if expectedErr != nil || actualErr != nil {
-		r.Details = append(r.Details, fmt.Sprintf("persisted %s subject_id=%d category=%s decimal parse errors expected=%q actual=%q", domain, subjectID, category, expectedText, actualText))
+		r.WarningDetails = append(r.WarningDetails, fmt.Sprintf("persisted %s subject_id=%d category=%s decimal parse errors expected=%q actual=%q", domain, subjectID, category, expectedText, actualText))
 		return true
 	}
 	if expected.Equal(actual) {
 		return false
 	}
-	r.Details = append(r.Details, fmt.Sprintf("persisted %s subject_id=%d category=%s summary=%s items=%s delta=%s", domain, subjectID, category, expected.StringFixed(2), actual.StringFixed(2), actual.Sub(expected).StringFixed(2)))
+	r.WarningDetails = append(r.WarningDetails, fmt.Sprintf("persisted %s subject_id=%d category=%s summary=%s items=%s delta=%s", domain, subjectID, category, expected.StringFixed(2), actual.StringFixed(2), actual.Sub(expected).StringFixed(2)))
 	return true
 }
 
