@@ -196,12 +196,13 @@ RETURNING id, (xmax = 0)`, reportID, affiliationID,
 
 func loadMPContract(ctx context.Context, tx pgx.Tx, subjectID int64, key string, expense types.ContractExpense) (loadCounts, error) {
 	date, rawDate := sourceDate(expense.Date)
+	description := sourceText(expense.Description)
 	_, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO mp_contract_expenses (report_subject_id, source_key, supplier, description, expense_date, source_date, total, is_refunded)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO mp_contract_expenses (report_subject_id, source_key, supplier, description, category, expense_date, source_date, total, is_refunded)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (report_subject_id, source_key) DO NOTHING RETURNING id`,
 		`SELECT id FROM mp_contract_expenses WHERE report_subject_id = $1 AND source_key = $2`, subjectID, key,
-		sourceText(expense.Supplier), sourceText(expense.Description), date, rawDate, expense.Total, expense.IsRefunded)
+		sourceText(expense.Supplier), description, contractCategory(description), date, rawDate, expense.Total, expense.IsRefunded)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert MP contract: %w", err)
 	}

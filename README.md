@@ -198,6 +198,7 @@ and then [`db/003_add_administration_and_officer_report_links.sql`](./db/003_add
 and then [`db/004_add_report_subject_reconciliation.sql`](./db/004_add_report_subject_reconciliation.sql)
 and then [`db/005_normalize_traveller_identities.sql`](./db/005_normalize_traveller_identities.sql)
 and then [`db/006_add_administration_travel_source_keys.sql`](./db/006_add_administration_travel_source_keys.sql)
+and then [`db/007_add_contract_expense_categories.sql`](./db/007_add_contract_expense_categories.sql)
 once before invoking the detail loaders. The latter adds the
 `report_subject_expense_reconciliation` view; it compares MP/Officer source
 summary totals with their individually disclosed detail-row totals. The prior
@@ -213,6 +214,11 @@ totals and traveller totals in separate columns, avoiding misleading
 double-counting when a person's own travel appears in their subject disclosure.
 `db/006_add_administration_travel_source_keys.sql` preserves separate rows when
 the House reuses an Administration travel event ID within a reporting period.
+`db/007_add_contract_expense_categories.sql` retains each source contract
+description and adds a broad normalized category for filtering and aggregation:
+`information_technology`, `communications`, `professional_services`,
+`office_and_equipment`, `facilities`, `printing_and_translation`,
+`training_and_events`, `travel`, or `other`.
 
 The expected client/API payloads are documented in [`docs/frontend-data-contract.md`](./docs/frontend-data-contract.md).
 

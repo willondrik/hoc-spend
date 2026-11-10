@@ -112,12 +112,13 @@ func loadOfficerContract(ctx context.Context, tx pgx.Tx, subjectID int64, expens
 		return loadCounts{}, err
 	}
 	date, rawDate := sourceDate(expense.Date)
+	description := sourceText(expense.Description)
 	_, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO officer_contract_expenses (report_subject_id, source_key, supplier, description, expense_date, source_date, total_cost)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO officer_contract_expenses (report_subject_id, source_key, supplier, description, category, expense_date, source_date, total_cost)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (report_subject_id, source_key) DO NOTHING RETURNING id`,
 		`SELECT id FROM officer_contract_expenses WHERE report_subject_id = $1 AND source_key = $2`, subjectID, key,
-		sourceText(expense.Supplier), sourceText(expense.Description), date, rawDate, expense.TotalCost)
+		sourceText(expense.Supplier), description, contractCategory(description), date, rawDate, expense.TotalCost)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert officer contract: %w", err)
 	}

@@ -118,6 +118,11 @@ CREATE TABLE IF NOT EXISTS mp_contract_expenses (
     source_key TEXT NOT NULL,
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
+        'information_technology', 'communications', 'professional_services',
+        'office_and_equipment', 'facilities', 'printing_and_translation',
+        'training_and_events', 'travel', 'other'
+    )),
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     total NUMERIC(14, 2) NOT NULL,
@@ -205,6 +210,11 @@ CREATE TABLE IF NOT EXISTS administration_contract_expenses (
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
+        'information_technology', 'communications', 'professional_services',
+        'office_and_equipment', 'facilities', 'printing_and_translation',
+        'training_and_events', 'travel', 'other'
+    )),
     period_start DATE,
     period_end DATE,
     source_period_start TEXT NOT NULL DEFAULT '',
@@ -285,6 +295,11 @@ CREATE TABLE IF NOT EXISTS officer_contract_expenses (
     source_key TEXT NOT NULL,
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
+        'information_technology', 'communications', 'professional_services',
+        'office_and_equipment', 'facilities', 'printing_and_translation',
+        'training_and_events', 'travel', 'other'
+    )),
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     total_cost NUMERIC(14, 2) NOT NULL,
@@ -354,18 +369,23 @@ CREATE INDEX IF NOT EXISTS report_subjects_mp_affiliation_idx ON report_subjects
 CREATE INDEX IF NOT EXISTS mp_contract_expenses_subject_date_idx
     ON mp_contract_expenses (report_subject_id, expense_date DESC);
 CREATE INDEX IF NOT EXISTS mp_contract_expenses_supplier_idx ON mp_contract_expenses (supplier);
+CREATE INDEX IF NOT EXISTS mp_contract_expenses_category_idx ON mp_contract_expenses (category);
 CREATE INDEX IF NOT EXISTS mp_hospitality_expenses_subject_date_idx
     ON mp_hospitality_expenses (report_subject_id, expense_date DESC);
 CREATE INDEX IF NOT EXISTS mp_travel_expenses_subject_date_idx
     ON mp_travel_expenses (report_subject_id, period_start DESC);
 CREATE INDEX IF NOT EXISTS administration_contract_expenses_report_idx
     ON administration_contract_expenses (report_id);
+CREATE INDEX IF NOT EXISTS administration_contract_expenses_category_idx
+    ON administration_contract_expenses (category);
 CREATE INDEX IF NOT EXISTS administration_hospitality_expenses_report_date_idx
     ON administration_hospitality_expenses (report_id, expense_date DESC);
 CREATE INDEX IF NOT EXISTS administration_travel_expenses_report_period_idx
     ON administration_travel_expenses (report_id, period_start DESC);
 CREATE INDEX IF NOT EXISTS officer_contract_expenses_subject_date_idx
     ON officer_contract_expenses (report_subject_id, expense_date DESC);
+CREATE INDEX IF NOT EXISTS officer_contract_expenses_category_idx
+    ON officer_contract_expenses (category);
 CREATE INDEX IF NOT EXISTS officer_hospitality_expenses_subject_date_idx
     ON officer_hospitality_expenses (report_subject_id, expense_date DESC);
 CREATE INDEX IF NOT EXISTS officer_travel_expenses_subject_period_idx

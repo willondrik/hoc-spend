@@ -107,6 +107,9 @@ interface MpExpenseSummary {
 
 interface ContractExpense {
   supplier: string;
+  /** Broad normalized category derived from the source description. */
+  category: ContractExpenseCategory;
+  /** Original House of Commons text; never replaced by the category. */
   description: string;
   /** Normalized when possible; otherwise the original source value. */
   date: ISODate | SourceDate;
@@ -114,6 +117,17 @@ interface ContractExpense {
   /** Omitted or false for a non-refund entry. */
   isRefunded?: boolean;
 }
+
+type ContractExpenseCategory =
+  | "information_technology"
+  | "communications"
+  | "professional_services"
+  | "office_and_equipment"
+  | "facilities"
+  | "printing_and_translation"
+  | "training_and_events"
+  | "travel"
+  | "other";
 
 interface ExpenseItem {
   claim: string;
@@ -203,6 +217,9 @@ The scraper currently has no populated Administration summary parser. The fronte
 ```ts
 interface AdminContractExpense {
   suppliers: string[];
+  /** Broad normalized category derived from the source description. */
+  category: ContractExpenseCategory;
+  /** Original House of Commons text; never replaced by the category. */
   description: string;
   contractPeriod: DateRange;
   originalContractValue: Money;
@@ -276,6 +293,9 @@ interface OfficerExpenseSummary {
 
 interface OfficerContractExpense {
   supplier: string;
+  /** Broad normalized category derived from the source description. */
+  category: ContractExpenseCategory;
+  /** Original House of Commons text; never replaced by the category. */
   description: string;
   date: ISODate | SourceDate;
   totalCost: Money;

@@ -109,11 +109,12 @@ WHERE id = $1`, reportID,
 
 func loadAdministrationContract(ctx context.Context, tx pgx.Tx, reportID int64, expense types.AdminContractExpense, key string) (loadCounts, error) {
 	start, end, sourceStart, sourceEnd := sourceDateRange(expense.ContractPeriod)
+	description := sourceText(expense.Description)
 	id, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO administration_contract_expenses (report_id, source_key, description, period_start, period_end, source_period_start, source_period_end, original_contract_value, amended_contract_value)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO administration_contract_expenses (report_id, source_key, description, category, period_start, period_end, source_period_start, source_period_end, original_contract_value, amended_contract_value)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (report_id, source_key) DO NOTHING RETURNING id`,
-		`SELECT id FROM administration_contract_expenses WHERE report_id = $1 AND source_key = $2`, reportID, key, sourceText(expense.Description), start, end, sourceStart, sourceEnd, expense.OriginalContractValue, expense.AmendedContractValue)
+		`SELECT id FROM administration_contract_expenses WHERE report_id = $1 AND source_key = $2`, reportID, key, description, contractCategory(description), start, end, sourceStart, sourceEnd, expense.OriginalContractValue, expense.AmendedContractValue)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert administration contract: %w", err)
 	}
