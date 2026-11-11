@@ -150,8 +150,9 @@ represented in the schema:
 - `Loader.InsertNewMPProfiles(ctx, profiles)` creates disclosure-backed MP
   records using the deterministic internal `mps.source_identity` key. The
   optional `mps.profile_url` is reserved for the canonical public House member
-  profile URL and can be populated later by the current-member enrichment pass.
-  The report loader never matches historic MPs by name alone.
+  profile URL. A normal MP-inclusive `-apply` run enriches current MPs after the
+  disclosure reports have been committed. The report loader never matches
+  historic MPs by name alone.
 - `Loader.NewReports(ctx, domain, reports)` is the read-only preflight for a
   discovered report list. It returns only periods not already hosted, so the
   caller can avoid fetching their detail pages. `Loader.InsertNewReports(ctx,
@@ -184,9 +185,9 @@ For MP report subjects, `MPReportSubject.SourceIdentity` is required and must
 already exist in `mps.source_identity`; name-only MP matching is intentionally
 not supported. Load MP identities first with `InsertNewMPProfiles`.
 
-To enrich currently serving MPs with their canonical House profile URL, avatar,
-contact information, offices, province, and roles after MP report data has been
-loaded, run:
+After every successful MP-inclusive `-apply` run, the scraper enriches currently
+serving MPs with their canonical House profile URL, avatar, contact information,
+offices, province, and roles. To rerun only that enrichment pass, run:
 
 ```bash
 go run ./cmd/scraper -enrich-mp-profiles

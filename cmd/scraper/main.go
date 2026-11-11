@@ -48,7 +48,7 @@ func main() {
 		domain               = flag.String("domain", "all", "report domain to inspect: all, mp, administration, or officer")
 		apply                = flag.Bool("apply", false, "fetch, parse, and load new reports")
 		audit                = flag.Bool("audit", false, "verify parsed and persisted category totals; requires -apply")
-		enrichMPProfilesFlag = flag.Bool("enrich-mp-profiles", false, "fetch current House MP profiles and enrich uniquely matching loaded disclosure MPs")
+		enrichMPProfilesFlag = flag.Bool("enrich-mp-profiles", false, "rerun current House MP profile enrichment without loading disclosure reports")
 		allReports           = flag.Bool("all", false, "with -apply, process discovered reports including existing reports; ignores -limit")
 		limit                = flag.Int("limit", 1, "maximum new reports to load with -apply; zero loads none")
 		fiscalYear           = flag.Int("fiscal-year", 0, "optional fiscal year filter; requires -fiscal-quarter")
@@ -115,6 +115,11 @@ func main() {
 	if len(runErrors) > 0 {
 		log.Fatal(errors.Join(runErrors...))
 	}
+	if opts.apply && includesMP(selected) {
+		if err := enrichMPProfiles(ctx, loader, service); err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func (opts runOptions) validate() error {
@@ -134,6 +139,15 @@ func (opts runOptions) validate() error {
 		return fmt.Errorf("invalid fiscal period FY%d Q%d", opts.fiscalYear, opts.fiscalQuarter)
 	}
 	return nil
+}
+
+func includesMP(checks []discovery) bool {
+	for _, check := range checks {
+		if check.domain == load.ReportDomainMP {
+			return true
+		}
+	}
+	return false
 }
 
 func selectDiscoveries(value string, checks []discovery) ([]discovery, error) {
@@ -160,7 +174,7 @@ func runDomain(ctx context.Context, pool *pgxpool.Pool, loader *load.Loader, ser
 		return fmt.Errorf("parse %s report index: %w", check.name, parseErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("close %s report index response: %w", check.name, closeErr)
+		return fmt.Errorf("close %s: %w", check.name, closeErr)
 	}
 
 	newReports, err := loader.NewReports(ctx, check.domain, reports.Reports)

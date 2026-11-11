@@ -41,6 +41,15 @@ func TestRunOptionsValidate(t *testing.T) {
 	}
 }
 
+func TestIncludesMP(t *testing.T) {
+	if !includesMP([]discovery{{domain: load.ReportDomainAdministration}, {domain: load.ReportDomainMP}}) {
+		t.Fatal("includesMP() = false, want true when MP discovery is selected")
+	}
+	if includesMP([]discovery{{domain: load.ReportDomainAdministration}, {domain: load.ReportDomainOfficer}}) {
+		t.Fatal("includesMP() = true, want false without MP discovery")
+	}
+}
+
 func TestMPSourceIdentity(t *testing.T) {
 	base := types.MPExpenseSummary{Name: types.PersonName{FirstName: "Jane", LastName: "Doe"}, Constituency: "Example Riding", URL: "https://example.test/report", FiscalYear: 2026, FiscalQuarter: 1}
 	got, err := mpSourceIdentity(base)
