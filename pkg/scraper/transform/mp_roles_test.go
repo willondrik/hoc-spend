@@ -6,7 +6,39 @@ import (
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/willondrik/hoc-spend/pkg/scraper/types"
 )
+
+func TestMPDirectoryEntries(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+<div class="ce-mip-mp-tile-container">
+  <a class="ce-mip-mp-tile-link" href="/Members/en/jane-doe(42)"></a>
+  <div class="ce-mip-mp-name">Jane Doe</div>
+  <div class="ce-mip-mp-constituency">Example Riding</div>
+</div>
+<div class="ce-mip-mp-tile-container">
+  <a class="ce-mip-mp-tile-link" href="/Members/en/missing-name(43)"></a>
+  <div class="ce-mip-mp-constituency">Ignored Riding</div>
+</div>`))
+	if err != nil {
+		t.Fatalf("new document: %v", err)
+	}
+
+	entries, err := MPDirectoryEntries(doc)
+	if err != nil {
+		t.Fatalf("MPDirectoryEntries() error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entry count = %d, want 1", len(entries))
+	}
+	if got, want := entries[0], (types.MPDirectoryEntry{
+		Name:         types.PersonName{FirstName: "Jane", LastName: "Doe"},
+		Constituency: "Example Riding",
+		ProfileURL:   "https://www.ourcommons.ca/Members/en/jane-doe(42)",
+	}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("MPDirectoryEntries() = %#v, want %#v", got, want)
+	}
+}
 
 func TestProcessRolesAlwaysIncludesMemberOfParliament(t *testing.T) {
 	tests := []struct {

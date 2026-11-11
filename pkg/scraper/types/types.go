@@ -152,12 +152,22 @@ type ExpenseTotals struct {
 // ============================================================
 
 type MPDetails struct {
-	Name       PersonName
-	Province   string
-	Contact    MPContactInfo
-	Roles      []string
-	Avatar     []byte
-	ProfileURL string
+	Name           PersonName
+	Province       string
+	Contact        MPContactInfo
+	Roles          []string
+	Avatar         []byte
+	ProfileURL     string
+	SourceIdentity string
+}
+
+// MPDirectoryEntry is one current member listed in the House member directory.
+// Constituency is kept with the profile URL so enrichment can safely identify a
+// disclosure MP without relying on a name alone.
+type MPDirectoryEntry struct {
+	Name         PersonName
+	Constituency string
+	ProfileURL   string
 }
 
 type MPProfileURL struct {

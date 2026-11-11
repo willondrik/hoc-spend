@@ -431,6 +431,49 @@ func GetUrls(resp *http.Response) ([]string, error) {
 	return mpUrls, nil
 }
 
+// MPDirectoryEntries parses current House member directory tiles. The directory
+// includes the canonical profile URL and current constituency required for a
+// conservative enrichment match against disclosure-backed MP identities.
+func MPDirectoryEntries(doc *goquery.Document) ([]types.MPDirectoryEntry, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("MP directory document is nil")
+	}
+
+	entries := make([]types.MPDirectoryEntry, 0)
+	doc.Find(".ce-mip-mp-tile-container").Each(func(_ int, tile *goquery.Selection) {
+		href, ok := tile.Find("a.ce-mip-mp-tile-link").Attr("href")
+		if !ok {
+			return
+		}
+		href = strings.TrimSpace(href)
+		if href == "" {
+			return
+		}
+		if strings.HasPrefix(href, "/") {
+			href = "https://www.ourcommons.ca" + href
+		}
+
+		nameText := strings.TrimSpace(tile.Find(".ce-mip-mp-name").First().Text())
+		if nameText == "" {
+			return
+		}
+		name := formatName(nameText)
+		constituency := strings.TrimSpace(tile.Find(".ce-mip-mp-constituency").First().Text())
+		if (name.FirstName == "" && name.LastName == "") || constituency == "" {
+			return
+		}
+		entries = append(entries, types.MPDirectoryEntry{
+			Name:         name,
+			Constituency: constituency,
+			ProfileURL:   href,
+		})
+	})
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("House MP directory contains no member tiles")
+	}
+	return entries, nil
+}
+
 func IsEmptyFields(v reflect.Value, prefix string) (bool, string) {
 	if v.Kind() == reflect.Ptr && !v.IsNil() {
 		v = v.Elem()

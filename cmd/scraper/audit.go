@@ -171,11 +171,11 @@ func sumOfficerTravel(expenses []types.OfficerTravelExpense) decimal.Decimal {
 }
 
 func auditMPPersisted(ctx context.Context, pool *pgxpool.Pool, report types.ExpenditureReport, subjects []load.MPReportSubject) auditResult {
-	profileURLs := make([]string, 0, len(subjects))
+	sourceIdentities := make([]string, 0, len(subjects))
 	for _, subject := range subjects {
-		profileURLs = append(profileURLs, subject.ProfileURL)
+		sourceIdentities = append(sourceIdentities, subject.SourceIdentity)
 	}
-	return auditPersistedSubjects(ctx, pool, load.ReportDomainMP, report, len(subjects), profileURLs)
+	return auditPersistedSubjects(ctx, pool, load.ReportDomainMP, report, len(subjects), sourceIdentities)
 }
 
 func auditOfficerPersisted(ctx context.Context, pool *pgxpool.Pool, report types.ExpenditureReport, subjects []load.OfficerReportSubject) auditResult {
@@ -187,7 +187,7 @@ func auditOfficerPersisted(ctx context.Context, pool *pgxpool.Pool, report types
 	return auditPersistedSubjects(ctx, pool, load.ReportDomainOfficer, report, len(uniquePeople), nil)
 }
 
-func auditPersistedSubjects(ctx context.Context, pool *pgxpool.Pool, domain load.ReportDomain, report types.ExpenditureReport, expectedSubjects int, profileURLs []string) auditResult {
+func auditPersistedSubjects(ctx context.Context, pool *pgxpool.Pool, domain load.ReportDomain, report types.ExpenditureReport, expectedSubjects int, sourceIdentities []string) auditResult {
 	result := auditResult{}
 	var subjects int
 	err := pool.QueryRow(ctx, `
@@ -200,7 +200,7 @@ LEFT JOIN mps ON mps.id = mp_affiliations.mp_id
 WHERE disclosure_reports.domain = $1
   AND disclosure_reports.fiscal_year = $2
   AND disclosure_reports.fiscal_quarter = $3
-  AND ($4::text[] IS NULL OR mps.profile_url = ANY($4::text[]))`, domain, report.FiscalYear, report.FiscalQuarter, profileURLs).Scan(&subjects)
+  AND ($4::text[] IS NULL OR mps.source_identity = ANY($4::text[]))`, domain, report.FiscalYear, report.FiscalQuarter, sourceIdentities).Scan(&subjects)
 	result.check(err == nil && subjects == expectedSubjects, fmt.Sprintf("persisted %s subject-count expected=%d actual=%d error=%v", domain, expectedSubjects, subjects, err))
 	if err != nil {
 		return result
@@ -234,12 +234,12 @@ LEFT JOIN (
 WHERE disclosure_reports.domain = $1
   AND disclosure_reports.fiscal_year = $2
   AND disclosure_reports.fiscal_quarter = $3
-  AND ($4::text[] IS NULL OR mps.profile_url = ANY($4::text[]))
+  AND ($4::text[] IS NULL OR mps.source_identity = ANY($4::text[]))
   AND (
       report_subjects.contract_total <> COALESCE(contracts.total, 0)
       OR report_subjects.hospitality_total <> COALESCE(hospitality.total, 0)
       OR report_subjects.travel_total <> COALESCE(travel.total, 0)
-  )`, domain, report.FiscalYear, report.FiscalQuarter, profileURLs)
+  )`, domain, report.FiscalYear, report.FiscalQuarter, sourceIdentities)
 	if err != nil {
 		result.check(false, fmt.Sprintf("persisted %s total query error=%v", domain, err))
 		return result

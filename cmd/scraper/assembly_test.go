@@ -104,8 +104,8 @@ func TestMPReportSubjectsFetchesAllDetails(t *testing.T) {
 		t.Fatalf("subjects=%d profiles=%d, want 1 each", len(subjects), len(profiles))
 	}
 	subject := subjects[0]
-	if subject.ProfileURL != profiles[0].ProfileURL || !strings.HasPrefix(subject.ProfileURL, "source://ourcommons.ca/proactivedisclosure/mp/") {
-		t.Fatalf("unexpected source identity: subject=%q profile=%q", subject.ProfileURL, profiles[0].ProfileURL)
+	if subject.SourceIdentity != profiles[0].SourceIdentity || !strings.HasPrefix(subject.SourceIdentity, "source://ourcommons.ca/proactivedisclosure/mp/") {
+		t.Fatalf("unexpected source identity: subject=%q profile=%q", subject.SourceIdentity, profiles[0].SourceIdentity)
 	}
 	if len(subject.Expenses.ContractExpenses) != 1 || len(subject.Expenses.HospitalityExpenses) != 1 || len(subject.Expenses.TravelExpenses) != 1 {
 		t.Fatalf("detail counts = contracts:%d hospitality:%d travel:%d, want 1 each", len(subject.Expenses.ContractExpenses), len(subject.Expenses.HospitalityExpenses), len(subject.Expenses.TravelExpenses))

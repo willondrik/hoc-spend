@@ -12,9 +12,9 @@ import (
 
 func TestUniqueMPProfiles(t *testing.T) {
 	profiles := []*types.MPDetails{
-		{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}, ProfileURL: " https://example.test/members/1 "},
-		{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}, ProfileURL: "https://example.test/members/1"},
-		{Name: types.PersonName{FirstName: "Grace", LastName: "Hopper"}, ProfileURL: "https://example.test/members/2"},
+		{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}, SourceIdentity: " source://example.test/members/1 "},
+		{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}, SourceIdentity: "source://example.test/members/1"},
+		{Name: types.PersonName{FirstName: "Grace", LastName: "Hopper"}, SourceIdentity: "source://example.test/members/2"},
 	}
 
 	got, duplicates, err := uniqueMPProfiles(profiles)
@@ -27,28 +27,28 @@ func TestUniqueMPProfiles(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("unique profile count = %d, want 2", len(got))
 	}
-	if got[0].ProfileURL != "https://example.test/members/1" || got[1].ProfileURL != "https://example.test/members/2" {
-		t.Fatalf("profile URLs = [%q, %q], want sorted trimmed URLs", got[0].ProfileURL, got[1].ProfileURL)
+	if got[0].SourceIdentity != "source://example.test/members/1" || got[1].SourceIdentity != "source://example.test/members/2" {
+		t.Fatalf("source identities = [%q, %q], want sorted trimmed identities", got[0].SourceIdentity, got[1].SourceIdentity)
 	}
 }
 
 func TestUniqueMPProfilesRejectsMissingStableIdentity(t *testing.T) {
 	_, _, err := uniqueMPProfiles([]*types.MPDetails{{Name: types.PersonName{FirstName: "Ada"}}})
 	if err == nil {
-		t.Fatal("uniqueMPProfiles() error = nil, want error for empty profile URL")
+		t.Fatal("uniqueMPProfiles() error = nil, want error for empty source identity")
 	}
 }
 
 func TestFilterNewMPProfiles(t *testing.T) {
 	profiles := []*types.MPDetails{
-		{ProfileURL: "https://example.test/members/1"},
-		{ProfileURL: "https://example.test/members/2"},
+		{SourceIdentity: "source://example.test/members/1"},
+		{SourceIdentity: "source://example.test/members/2"},
 	}
 
 	got := filterNewMPProfiles(profiles, map[string]struct{}{
-		"https://example.test/members/1": {},
+		"source://example.test/members/1": {},
 	})
-	if len(got) != 1 || got[0].ProfileURL != "https://example.test/members/2" {
+	if len(got) != 1 || got[0].SourceIdentity != "source://example.test/members/2" {
 		t.Fatalf("filterNewMPProfiles() = %#v, want only profile 2", got)
 	}
 }

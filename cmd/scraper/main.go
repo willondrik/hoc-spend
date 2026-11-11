@@ -33,42 +33,45 @@ type discovery struct {
 }
 
 type runOptions struct {
-	domain        string
-	apply         bool
-	audit         bool
-	allReports    bool
-	limit         int
-	fiscalYear    int
-	fiscalQuarter int
+	domain           string
+	apply            bool
+	audit            bool
+	enrichMPProfiles bool
+	allReports       bool
+	limit            int
+	fiscalYear       int
+	fiscalQuarter    int
 }
 
 func main() {
 	var (
-		domain        = flag.String("domain", "all", "report domain to inspect: all, mp, administration, or officer")
-		apply         = flag.Bool("apply", false, "fetch, parse, and load new reports")
-		audit         = flag.Bool("audit", false, "verify parsed and persisted category totals; requires -apply")
-		allReports    = flag.Bool("all", false, "with -apply, process discovered reports including existing reports; ignores -limit")
-		limit         = flag.Int("limit", 1, "maximum new reports to load with -apply; zero loads none")
-		fiscalYear    = flag.Int("fiscal-year", 0, "optional fiscal year filter; requires -fiscal-quarter")
-		fiscalQuarter = flag.Int("fiscal-quarter", 0, "optional fiscal quarter filter (1-4); requires -fiscal-year")
+		domain               = flag.String("domain", "all", "report domain to inspect: all, mp, administration, or officer")
+		apply                = flag.Bool("apply", false, "fetch, parse, and load new reports")
+		audit                = flag.Bool("audit", false, "verify parsed and persisted category totals; requires -apply")
+		enrichMPProfilesFlag = flag.Bool("enrich-mp-profiles", false, "fetch current House MP profiles and enrich uniquely matching loaded disclosure MPs")
+		allReports           = flag.Bool("all", false, "with -apply, process discovered reports including existing reports; ignores -limit")
+		limit                = flag.Int("limit", 1, "maximum new reports to load with -apply; zero loads none")
+		fiscalYear           = flag.Int("fiscal-year", 0, "optional fiscal year filter; requires -fiscal-quarter")
+		fiscalQuarter        = flag.Int("fiscal-quarter", 0, "optional fiscal quarter filter (1-4); requires -fiscal-year")
 	)
 	flag.Parse()
 
 	opts := runOptions{
-		domain:        *domain,
-		apply:         *apply,
-		audit:         *audit,
-		allReports:    *allReports,
-		limit:         *limit,
-		fiscalYear:    *fiscalYear,
-		fiscalQuarter: *fiscalQuarter,
+		domain:           *domain,
+		apply:            *apply,
+		audit:            *audit,
+		enrichMPProfiles: *enrichMPProfilesFlag,
+		allReports:       *allReports,
+		limit:            *limit,
+		fiscalYear:       *fiscalYear,
+		fiscalQuarter:    *fiscalQuarter,
 	}
 	if err := opts.validate(); err != nil {
 		log.Fatal(err)
 	}
 
 	timeout := 2 * time.Minute
-	if opts.apply {
+	if opts.apply || opts.enrichMPProfiles {
 		timeout = 2 * time.Hour
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -85,6 +88,12 @@ func main() {
 		log.Fatalf("create loader: %v", err)
 	}
 	service := extract.NewSvc(requests.NewRequestManager())
+	if opts.enrichMPProfiles {
+		if err := enrichMPProfiles(ctx, loader, service); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	checks := []discovery{
 		{name: "MP", domain: load.ReportDomainMP, fetch: service.MpReports, parse: transform.MpExpenditureReports},
@@ -114,6 +123,9 @@ func (opts runOptions) validate() error {
 	}
 	if opts.audit && !opts.apply {
 		return fmt.Errorf("-audit requires -apply so persisted data can be verified")
+	}
+	if opts.enrichMPProfiles && (opts.apply || opts.audit || opts.allReports || opts.fiscalYear != 0 || opts.fiscalQuarter != 0 || opts.domain != "all" || opts.limit != 1) {
+		return fmt.Errorf("-enrich-mp-profiles cannot be combined with report-loading, audit, domain, limit, or fiscal-period flags")
 	}
 	if (opts.fiscalYear == 0) != (opts.fiscalQuarter == 0) {
 		return fmt.Errorf("-fiscal-year and -fiscal-quarter must be supplied together")
@@ -306,9 +318,9 @@ func mpReportSubjects(service *extract.ExtractSvc, report types.ExpenditureRepor
 		if (index+1)%25 == 0 || index+1 == len(summaries) {
 			fmt.Printf("  fetched MP details %d/%d\n", index+1, len(summaries))
 		}
-		subjects = append(subjects, load.MPReportSubject{ProfileURL: identity, Summary: *summary, Expenses: expenses})
+		subjects = append(subjects, load.MPReportSubject{SourceIdentity: identity, Summary: *summary, Expenses: expenses})
 		if _, exists := seen[identity]; !exists {
-			profiles = append(profiles, &types.MPDetails{Name: summary.Name, ProfileURL: identity})
+			profiles = append(profiles, &types.MPDetails{Name: summary.Name, SourceIdentity: identity})
 			seen[identity] = struct{}{}
 		}
 	}
@@ -374,17 +386,79 @@ func mpProfilesFromSubjects(subjects []load.MPReportSubject) []*types.MPDetails 
 	profiles := make([]*types.MPDetails, 0, len(subjects))
 	seen := make(map[string]struct{}, len(subjects))
 	for _, subject := range subjects {
-		profileURL := strings.TrimSpace(subject.ProfileURL)
-		if profileURL == "" {
+		sourceIdentity := strings.TrimSpace(subject.SourceIdentity)
+		if sourceIdentity == "" {
 			continue
 		}
-		if _, exists := seen[profileURL]; exists {
+		if _, exists := seen[sourceIdentity]; exists {
 			continue
 		}
-		profiles = append(profiles, &types.MPDetails{Name: subject.Summary.Name, ProfileURL: profileURL})
-		seen[profileURL] = struct{}{}
+		profiles = append(profiles, &types.MPDetails{Name: subject.Summary.Name, SourceIdentity: sourceIdentity})
+		seen[sourceIdentity] = struct{}{}
 	}
 	return profiles
+}
+
+func enrichMPProfiles(ctx context.Context, loader *load.Loader, service *extract.ExtractSvc) error {
+	response, err := service.MpProfileUrl()
+	if err != nil {
+		return fmt.Errorf("fetch House MP directory: %w", err)
+	}
+	doc, parseErr := goquery.NewDocumentFromReader(response.Body)
+	closeErr := response.Body.Close()
+	if parseErr != nil {
+		return fmt.Errorf("parse House MP directory: %w", parseErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close House MP directory: %w", closeErr)
+	}
+	entries, err := transform.MPDirectoryEntries(doc)
+	if err != nil {
+		return fmt.Errorf("extract House MP directory entries: %w", err)
+	}
+
+	updated, unmatched, ambiguous, failed := 0, 0, 0, 0
+	for index, entry := range entries {
+		response, err := service.MpProfileByURL(entry.ProfileURL)
+		if err != nil {
+			failed++
+			fmt.Printf("  MP profile fetch failed name=%q url=%s error=%v\n", strings.TrimSpace(entry.Name.FirstName+" "+entry.Name.LastName), entry.ProfileURL, err)
+			continue
+		}
+		profile, parseErr := transform.GetProfile(response, entry.ProfileURL)
+		closeErr := response.Body.Close()
+		if parseErr != nil || closeErr != nil {
+			failed++
+			fmt.Printf("  MP profile parse failed name=%q url=%s error=%v\n", strings.TrimSpace(entry.Name.FirstName+" "+entry.Name.LastName), entry.ProfileURL, errors.Join(parseErr, closeErr))
+			continue
+		}
+		// Use the directory tile name for matching. It is paired with the
+		// directory constituency and is less susceptible to profile-page markup
+		// variations such as honorifics.
+		profile.Name = entry.Name
+		result, err := loader.EnrichMPProfile(ctx, profile, entry.Constituency)
+		if err != nil {
+			failed++
+			fmt.Printf("  MP profile load failed name=%q constituency=%q error=%v\n", strings.TrimSpace(entry.Name.FirstName+" "+entry.Name.LastName), entry.Constituency, err)
+			continue
+		}
+		switch {
+		case result.Updated:
+			updated++
+		case result.Unmatched:
+			unmatched++
+		case result.Ambiguous:
+			ambiguous++
+		}
+		if (index+1)%25 == 0 || index+1 == len(entries) {
+			fmt.Printf("  enriched current MP profiles %d/%d updated=%d unmatched=%d ambiguous=%d failed=%d\n", index+1, len(entries), updated, unmatched, ambiguous, failed)
+		}
+	}
+	fmt.Printf("MP profile enrichment: discovered=%d updated=%d unmatched=%d ambiguous=%d failed=%d\n", len(entries), updated, unmatched, ambiguous, failed)
+	if failed > 0 {
+		return fmt.Errorf("MP profile enrichment completed with %d failed profile requests/parses", failed)
+	}
+	return nil
 }
 
 func mpCategory[T any](service *extract.ExtractSvc, sourceURL string, parse func(*goquery.Document) ([]T, error)) ([]T, error) {

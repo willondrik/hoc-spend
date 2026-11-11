@@ -13,9 +13,9 @@ import (
 // House of Commons profile URL for that MP. The profile must have been loaded
 // before report details are persisted.
 type MPReportSubject struct {
-	ProfileURL string
-	Summary    types.MPExpenseSummary
-	Expenses   types.MPExpenses
+	SourceIdentity string
+	Summary        types.MPExpenseSummary
+	Expenses       types.MPExpenses
 }
 
 // ReuseExistingMPSubjectProfiles replaces generated source identities with an
@@ -25,9 +25,9 @@ type MPReportSubject struct {
 func (l *Loader) ReuseExistingMPSubjectProfiles(ctx context.Context, report types.ExpenditureReport, subjects []MPReportSubject) error {
 	for index := range subjects {
 		subject := &subjects[index]
-		var profileURL string
+		var sourceIdentity string
 		err := l.pool.QueryRow(ctx, `
-SELECT mps.profile_url
+SELECT mps.source_identity
 FROM report_subjects
 JOIN disclosure_reports ON disclosure_reports.id = report_subjects.report_id
 JOIN mp_affiliations ON mp_affiliations.id = report_subjects.mp_affiliation_id
@@ -41,21 +41,21 @@ WHERE disclosure_reports.domain = 'mp'
   AND mp_affiliations.constituency = $5
 ORDER BY report_subjects.id DESC
 LIMIT 1`, report.FiscalYear, report.FiscalQuarter,
-			strings.TrimSpace(subject.Summary.Name.FirstName), strings.TrimSpace(subject.Summary.Name.LastName), strings.TrimSpace(subject.Summary.Constituency)).Scan(&profileURL)
+			strings.TrimSpace(subject.Summary.Name.FirstName), strings.TrimSpace(subject.Summary.Name.LastName), strings.TrimSpace(subject.Summary.Constituency)).Scan(&sourceIdentity)
 		if err == pgx.ErrNoRows {
 			continue
 		}
 		if err != nil {
 			return fmt.Errorf("reuse MP profile for %q %q: %w", subject.Summary.Name.FirstName, subject.Summary.Name.LastName, err)
 		}
-		subject.ProfileURL = profileURL
+		subject.SourceIdentity = sourceIdentity
 	}
 	return nil
 }
 
 // LoadMPReport writes an MP quarterly report and all supplied MP details in
 // one transaction. It refuses name-only MP matching: every subject must supply
-// an existing durable profile URL.
+// an existing durable source identity.
 func (l *Loader) LoadMPReport(ctx context.Context, report types.ExpenditureReport, subjects []MPReportSubject) (DetailLoadResult, error) {
 	tx, err := beginLoad(ctx, l)
 	if err != nil {
@@ -85,16 +85,16 @@ func (l *Loader) LoadMPReport(ctx context.Context, report types.ExpenditureRepor
 }
 
 func loadMPSubject(ctx context.Context, tx pgx.Tx, reportID int64, subject MPReportSubject) (loadCounts, error) {
-	profileURL := sourceText(subject.ProfileURL)
-	if profileURL == "" {
-		return loadCounts{}, fmt.Errorf("MP report subject profile URL is required")
+	sourceIdentity := sourceText(subject.SourceIdentity)
+	if sourceIdentity == "" {
+		return loadCounts{}, fmt.Errorf("MP report subject source identity is required")
 	}
 	var mpID int64
-	if err := tx.QueryRow(ctx, `SELECT id FROM mps WHERE profile_url = $1`, profileURL).Scan(&mpID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT id FROM mps WHERE source_identity = $1`, sourceIdentity).Scan(&mpID); err != nil {
 		if err == pgx.ErrNoRows {
-			return loadCounts{}, fmt.Errorf("MP profile %q has not been loaded", profileURL)
+			return loadCounts{}, fmt.Errorf("MP source identity %q has not been loaded", sourceIdentity)
 		}
-		return loadCounts{}, fmt.Errorf("query MP profile %q: %w", profileURL, err)
+		return loadCounts{}, fmt.Errorf("query MP source identity %q: %w", sourceIdentity, err)
 	}
 
 	start, end, _, _ := sourceDateRange(subject.Summary.ReportingPeriod)

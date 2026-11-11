@@ -147,11 +147,11 @@ ignored by Git.
 `pkg/scraper/load` provides an additive loader for source identities already
 represented in the schema:
 
-- `Loader.InsertNewMPProfiles(ctx, profiles)` accepts `[]*types.MPDetails` and
-  treats `ProfileURL` as the durable MP identity. It batch-checks
-  `mps.profile_url`, then inserts only missing profiles and their required
-  `people` rows. It intentionally does not match profiles by name, caucus, or
-  constituency, because those values can be ambiguous or change over time.
+- `Loader.InsertNewMPProfiles(ctx, profiles)` creates disclosure-backed MP
+  records using the deterministic internal `mps.source_identity` key. The
+  optional `mps.profile_url` is reserved for the canonical public House member
+  profile URL and can be populated later by the current-member enrichment pass.
+  The report loader never matches historic MPs by name alone.
 - `Loader.NewReports(ctx, domain, reports)` is the read-only preflight for a
   discovered report list. It returns only periods not already hosted, so the
   caller can avoid fetching their detail pages. `Loader.InsertNewReports(ctx,
@@ -180,9 +180,22 @@ rows are refreshed on every complete report load so corrected source summary
 totals and category URLs can be backfilled by a re-scrape. A failed load rolls
 back the whole report transaction, allowing a later run to retry it cleanly.
 
-For MP report subjects, `MPReportSubject.ProfileURL` is required and must
-already exist in `mps.profile_url`; name-only MP matching is intentionally not
-supported. Load MP profiles first with `InsertNewMPProfiles`.
+For MP report subjects, `MPReportSubject.SourceIdentity` is required and must
+already exist in `mps.source_identity`; name-only MP matching is intentionally
+not supported. Load MP identities first with `InsertNewMPProfiles`.
+
+To enrich currently serving MPs with their canonical House profile URL, avatar,
+contact information, offices, province, and roles after MP report data has been
+loaded, run:
+
+```bash
+go run ./cmd/scraper -enrich-mp-profiles
+```
+
+The enrichment command matches only a unique normalized **name + current
+constituency** against an existing disclosure MP. It leaves former MPs and
+ambiguous matches untouched, and preserves the synthetic disclosure identity in
+`mps.source_identity`.
 
 Most source detail rows receive a deterministic SHA-256 `source_key`, scoped
 to their parent report or subject. This protects against duplicate writes if a

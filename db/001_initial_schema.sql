@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS mps (
     person_id BIGINT NOT NULL UNIQUE REFERENCES people(id) ON DELETE CASCADE,
     province TEXT,
     profile_url TEXT,
+    source_identity TEXT NOT NULL,
     avatar BYTEA,
     email TEXT,
     website TEXT,
@@ -65,7 +66,8 @@ CREATE TABLE IF NOT EXISTS mps (
     roles JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT mps_profile_url_key UNIQUE (profile_url)
+    CONSTRAINT mps_profile_url_key UNIQUE (profile_url),
+    CONSTRAINT mps_source_identity_key UNIQUE (source_identity)
 );
 
 -- An MP affiliation records the caucus and riding associated with one or more

@@ -20,10 +20,12 @@ func TestRunOptionsValidate(t *testing.T) {
 		{name: "officer apply", opts: runOptions{domain: "officer", apply: true, limit: 1}, want: true},
 		{name: "MP apply", opts: runOptions{domain: "mp", apply: true, limit: 1}, want: true},
 		{name: "all reports audit", opts: runOptions{domain: "all", apply: true, audit: true, allReports: true}, want: true},
+		{name: "MP profile enrichment", opts: runOptions{domain: "all", enrichMPProfiles: true, limit: 1}, want: true},
 		{name: "audit without apply", opts: runOptions{domain: "all", audit: true, limit: 1}},
 		{name: "negative limit", opts: runOptions{domain: "administration", limit: -1}},
 		{name: "incomplete period", opts: runOptions{domain: "administration", fiscalYear: 2026, limit: 1}},
 		{name: "invalid quarter", opts: runOptions{domain: "administration", fiscalYear: 2026, fiscalQuarter: 5, limit: 1}},
+		{name: "enrichment with apply", opts: runOptions{domain: "all", apply: true, enrichMPProfiles: true, limit: 1}},
 	}
 
 	for _, test := range tests {
@@ -93,13 +95,13 @@ func TestFilterFiscalPeriodAndLimitReports(t *testing.T) {
 
 func TestMPProfilesFromSubjectsUsesUniqueProfileURLs(t *testing.T) {
 	subjects := []load.MPReportSubject{
-		{ProfileURL: " profile-a ", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}}},
-		{ProfileURL: "profile-a", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}}},
-		{ProfileURL: "profile-b", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Grace", LastName: "Hopper"}}},
+		{SourceIdentity: " source-a ", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}}},
+		{SourceIdentity: "source-a", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Ada", LastName: "Lovelace"}}},
+		{SourceIdentity: "source-b", Summary: types.MPExpenseSummary{Name: types.PersonName{FirstName: "Grace", LastName: "Hopper"}}},
 	}
 
 	profiles := mpProfilesFromSubjects(subjects)
-	if len(profiles) != 2 || profiles[0].ProfileURL != "profile-a" || profiles[1].ProfileURL != "profile-b" {
-		t.Fatalf("mpProfilesFromSubjects() = %#v, want unique trimmed profile URLs", profiles)
+	if len(profiles) != 2 || profiles[0].SourceIdentity != "source-a" || profiles[1].SourceIdentity != "source-b" {
+		t.Fatalf("mpProfilesFromSubjects() = %#v, want unique trimmed source identities", profiles)
 	}
 }
