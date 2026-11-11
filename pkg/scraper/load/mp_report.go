@@ -122,9 +122,10 @@ WHERE mp_id = $1 AND constituency = $2 AND caucus = $3`,
 INSERT INTO report_subjects (
     report_id, mp_affiliation_id, subject_kind, caucus, salaries, travel_total,
     hospitality_total, contract_total, source_url, travel_source_url,
-    hospitality_source_url, contract_source_url
+    hospitality_source_url, contract_source_url, travel_csv_url,
+    hospitality_csv_url, contract_csv_url
 )
-VALUES ($1, $2, 'mp', $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, 'mp', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (report_id, mp_affiliation_id) DO UPDATE SET
     caucus = EXCLUDED.caucus,
     salaries = EXCLUDED.salaries,
@@ -135,12 +136,16 @@ ON CONFLICT (report_id, mp_affiliation_id) DO UPDATE SET
     travel_source_url = EXCLUDED.travel_source_url,
     hospitality_source_url = EXCLUDED.hospitality_source_url,
     contract_source_url = EXCLUDED.contract_source_url,
+    travel_csv_url = EXCLUDED.travel_csv_url,
+    hospitality_csv_url = EXCLUDED.hospitality_csv_url,
+    contract_csv_url = EXCLUDED.contract_csv_url,
     updated_at = CURRENT_TIMESTAMP
 RETURNING id, (xmax = 0)`, reportID, affiliationID,
 		sourceText(subject.Summary.Caucus), subject.Summary.Salaries, subject.Summary.TravelExpenses.TotalAmount,
 		subject.Summary.HospitalityExpenses.TotalAmount, subject.Summary.ContractExpenses.TotalAmount,
 		sourceText(subject.Summary.URL), sourceText(subject.Expenses.TravelExpensesURL),
-		sourceText(subject.Expenses.HospitalityExpensesURL), sourceText(subject.Expenses.ContractExpensesURL)).Scan(&subjectID, &subjectInserted)
+		sourceText(subject.Expenses.HospitalityExpensesURL), sourceText(subject.Expenses.ContractExpensesURL),
+		sourceText(subject.Expenses.TravelExpensesCSVURL), sourceText(subject.Expenses.HospitalityExpensesCSVURL), sourceText(subject.Expenses.ContractExpensesCSVURL)).Scan(&subjectID, &subjectInserted)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert MP report subject: %w", err)
 	}
@@ -152,6 +157,10 @@ RETURNING id, (xmax = 0)`, reportID, affiliationID,
 		counts.ExistingRows++
 	}
 	contractOccurrences := make(map[string]int, len(subject.Expenses.ContractExpenses))
+	contractURL, err := expenseSourceURL(subject.Expenses.ContractExpensesURL, "MP contract expense")
+	if err != nil && len(subject.Expenses.ContractExpenses) > 0 {
+		return loadCounts{}, err
+	}
 	for _, expense := range subject.Expenses.ContractExpenses {
 		if expense == nil {
 			return loadCounts{}, fmt.Errorf("MP contract expense is nil")
@@ -165,27 +174,35 @@ RETURNING id, (xmax = 0)`, reportID, affiliationID,
 		if err != nil {
 			return loadCounts{}, fmt.Errorf("create MP contract occurrence key: %w", err)
 		}
-		loaded, err := loadMPContract(ctx, tx, subjectID, key, *expense)
+		loaded, err := loadMPContract(ctx, tx, subjectID, key, contractURL, *expense)
 		if err != nil {
 			return loadCounts{}, err
 		}
 		counts.add(loaded)
+	}
+	hospitalityURL, err := expenseSourceURL(subject.Expenses.HospitalityExpensesURL, "MP hospitality expense")
+	if err != nil && len(subject.Expenses.HospitalityExpenses) > 0 {
+		return loadCounts{}, err
 	}
 	for _, expense := range subject.Expenses.HospitalityExpenses {
 		if expense == nil {
 			return loadCounts{}, fmt.Errorf("MP hospitality expense is nil")
 		}
-		loaded, err := loadMPHospitality(ctx, tx, subjectID, *expense)
+		loaded, err := loadMPHospitality(ctx, tx, subjectID, hospitalityURL, *expense)
 		if err != nil {
 			return loadCounts{}, err
 		}
 		counts.add(loaded)
 	}
+	travelURL, err := expenseSourceURL(subject.Expenses.TravelExpensesURL, "MP travel expense")
+	if err != nil && len(subject.Expenses.TravelExpenses) > 0 {
+		return loadCounts{}, err
+	}
 	for _, expense := range subject.Expenses.TravelExpenses {
 		if expense == nil {
 			return loadCounts{}, fmt.Errorf("MP travel expense is nil")
 		}
-		loaded, err := loadMPTravel(ctx, tx, subjectID, *expense)
+		loaded, err := loadMPTravel(ctx, tx, subjectID, travelURL, *expense)
 		if err != nil {
 			return loadCounts{}, err
 		}
@@ -194,15 +211,15 @@ RETURNING id, (xmax = 0)`, reportID, affiliationID,
 	return counts, nil
 }
 
-func loadMPContract(ctx context.Context, tx pgx.Tx, subjectID int64, key string, expense types.ContractExpense) (loadCounts, error) {
+func loadMPContract(ctx context.Context, tx pgx.Tx, subjectID int64, key, sourceURL string, expense types.ContractExpense) (loadCounts, error) {
 	date, rawDate := sourceDate(expense.Date)
 	description := sourceText(expense.Description)
 	_, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO mp_contract_expenses (report_subject_id, source_key, supplier, description, category, expense_date, source_date, total, is_refunded)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO mp_contract_expenses (report_subject_id, source_key, source_url, supplier, description, category, expense_date, source_date, total, is_refunded)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (report_subject_id, source_key) DO NOTHING RETURNING id`,
 		`SELECT id FROM mp_contract_expenses WHERE report_subject_id = $1 AND source_key = $2`, subjectID, key,
-		sourceText(expense.Supplier), description, contractCategory(description), date, rawDate, expense.Total, expense.IsRefunded)
+		sourceURL, sourceText(expense.Supplier), description, contractCategory(description), date, rawDate, expense.Total, expense.IsRefunded)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert MP contract: %w", err)
 	}
@@ -213,18 +230,18 @@ ON CONFLICT (report_subject_id, source_key) DO NOTHING RETURNING id`,
 	return counts, nil
 }
 
-func loadMPHospitality(ctx context.Context, tx pgx.Tx, subjectID int64, expense types.HospitalityExpense) (loadCounts, error) {
+func loadMPHospitality(ctx context.Context, tx pgx.Tx, subjectID int64, sourceURL string, expense types.HospitalityExpense) (loadCounts, error) {
 	key, err := sourceKey("mp-hospitality", expense)
 	if err != nil {
 		return loadCounts{}, err
 	}
 	date, rawDate := sourceDate(expense.Date)
 	id, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO mp_hospitality_expenses (report_subject_id, source_key, expense_date, source_date, location, attendance, purpose, event_type, total_cost, cost_per_person, is_refunded)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO mp_hospitality_expenses (report_subject_id, source_key, source_url, expense_date, source_date, location, attendance, purpose, event_type, total_cost, cost_per_person, is_refunded)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (report_subject_id, source_key) DO NOTHING RETURNING id`,
 		`SELECT id FROM mp_hospitality_expenses WHERE report_subject_id = $1 AND source_key = $2`, subjectID, key,
-		date, rawDate, sourceText(expense.Location), expense.Attendance, sourceText(expense.Purpose), sourceText(expense.Event.Type), expense.TotalCost, expense.CostPerPerson, expense.IsRefunded)
+		sourceURL, date, rawDate, sourceText(expense.Location), expense.Attendance, sourceText(expense.Purpose), sourceText(expense.Event.Type), expense.TotalCost, expense.CostPerPerson, expense.IsRefunded)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert MP hospitality: %w", err)
 	}
@@ -249,14 +266,14 @@ ON CONFLICT (hospitality_expense_id, source_key) DO NOTHING`, id, itemKey, sourc
 	return counts, nil
 }
 
-func loadMPTravel(ctx context.Context, tx pgx.Tx, subjectID int64, expense types.TravelExpense) (loadCounts, error) {
+func loadMPTravel(ctx context.Context, tx pgx.Tx, subjectID int64, sourceURL string, expense types.TravelExpense) (loadCounts, error) {
 	start, end, sourceStart, sourceEnd := sourceDateRange(expense.DateRange)
 	var id int64
 	err := tx.QueryRow(ctx, `
-INSERT INTO mp_travel_expenses (report_subject_id, claim, sequence, period_start, period_end, source_period_start, source_period_end, transportation_cost, accommodation_cost, meals_and_incidentals_cost, total_cost, regular_flight_points, special_flight_points, usa_flight_points, is_duplicate, is_refunded)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+INSERT INTO mp_travel_expenses (report_subject_id, source_url, claim, sequence, period_start, period_end, source_period_start, source_period_end, transportation_cost, accommodation_cost, meals_and_incidentals_cost, total_cost, regular_flight_points, special_flight_points, usa_flight_points, is_duplicate, is_refunded)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 ON CONFLICT (report_subject_id, sequence) DO NOTHING RETURNING id`,
-		subjectID, sourceText(expense.Claim), expense.Sequence,
+		subjectID, sourceURL, sourceText(expense.Claim), expense.Sequence,
 		start, end, sourceStart, sourceEnd, expense.Costs.Transportation, expense.Costs.Accommodation, expense.Costs.MealsAndIncidentals,
 		expense.Costs.Total, expense.FlightPoints.Regular, expense.FlightPoints.Special, expense.FlightPoints.USA, expense.IsDuplicate, expense.IsRefunded).Scan(&id)
 	inserted := err == nil

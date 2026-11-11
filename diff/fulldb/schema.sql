@@ -1,12 +1,19 @@
 -- hoc-spend PostgreSQL consolidated fresh-install database schema.
 --
 -- This is the final schema state produced by db/001_initial_schema.sql and
--- migrations 002 through 006. It is intended for a new installation, not as a
+-- migrations 002 through 009. It is intended for a new installation, not as a
 -- replacement for applying migrations to an existing database.
 --
 -- Migration 005's legacy traveller data repairs are intentionally omitted:
 -- a fresh database has no pre-migration rows to normalize. Its final
 -- person_expense_totals view is included below.
+-- Migration 007's existing-row category backfill is likewise omitted: contract
+-- expense category columns are created below with their final default,
+-- constraints, and indexes.
+-- Migration 008's source-URL backfill is likewise omitted: each new expense
+-- row is created below with its final non-null source_url column.
+-- Migration 009 adds nullable CSV-download URLs, which can only be populated
+-- for prior data by re-scraping the relevant category pages.
 --
 -- In a terminal, open psql as a database-creation-capable role:
 --   sudo -u postgres psql -d postgres
@@ -33,6 +40,9 @@ CREATE TABLE IF NOT EXISTS disclosure_reports (
     travel_source_url TEXT,
     hospitality_source_url TEXT,
     contract_source_url TEXT,
+    travel_csv_url TEXT,
+    hospitality_csv_url TEXT,
+    contract_csv_url TEXT,
     scraped_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -110,6 +120,9 @@ CREATE TABLE IF NOT EXISTS report_subjects (
     travel_source_url TEXT,
     hospitality_source_url TEXT,
     contract_source_url TEXT,
+    travel_csv_url TEXT,
+    hospitality_csv_url TEXT,
+    contract_csv_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT report_subjects_subject_reference_check CHECK (
@@ -124,6 +137,7 @@ CREATE TABLE IF NOT EXISTS mp_contract_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
@@ -143,6 +157,7 @@ CREATE TABLE IF NOT EXISTS mp_hospitality_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     location TEXT NOT NULL DEFAULT '',
@@ -170,6 +185,7 @@ CREATE TABLE IF NOT EXISTS mp_hospitality_expense_items (
 CREATE TABLE IF NOT EXISTS mp_travel_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
+    source_url TEXT NOT NULL,
     claim TEXT NOT NULL DEFAULT '',
     sequence INTEGER NOT NULL DEFAULT 0 CHECK (sequence >= 0),
     period_start DATE,
@@ -217,6 +233,7 @@ CREATE TABLE IF NOT EXISTS administration_contract_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
         'information_technology', 'communications', 'professional_services',
@@ -247,6 +264,7 @@ CREATE TABLE IF NOT EXISTS administration_hospitality_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
     event_id TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     host TEXT NOT NULL DEFAULT '',
     purpose TEXT NOT NULL DEFAULT '',
     expense_date DATE,
@@ -271,6 +289,7 @@ CREATE TABLE IF NOT EXISTS administration_travel_expenses (
     report_id BIGINT NOT NULL REFERENCES disclosure_reports(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
     event_id TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     traveller_person_id BIGINT REFERENCES people(id) ON DELETE SET NULL,
     purpose TEXT NOT NULL DEFAULT '',
     period_start DATE,
@@ -301,6 +320,7 @@ CREATE TABLE IF NOT EXISTS officer_contract_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
@@ -319,6 +339,7 @@ CREATE TABLE IF NOT EXISTS officer_hospitality_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     expense_date DATE,
     source_date TEXT NOT NULL DEFAULT '',
     location TEXT NOT NULL DEFAULT '',
@@ -342,6 +363,7 @@ CREATE TABLE IF NOT EXISTS officer_travel_expenses (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     report_subject_id BIGINT NOT NULL REFERENCES report_subjects(id) ON DELETE CASCADE,
     source_key TEXT NOT NULL,
+    source_url TEXT NOT NULL,
     period_start DATE,
     period_end DATE,
     source_period_start TEXT NOT NULL DEFAULT '',

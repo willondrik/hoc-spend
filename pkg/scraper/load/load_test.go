@@ -292,6 +292,20 @@ func TestAdministrationReportCategoryURLsAreTrimmedBeforePersistence(t *testing.
 	}
 }
 
+func TestExpenseSourceURL(t *testing.T) {
+	url, err := expenseSourceURL(" https://example.test/source ", "MP contract expense")
+	if err != nil {
+		t.Fatalf("expenseSourceURL() error = %v", err)
+	}
+	if url != "https://example.test/source" {
+		t.Fatalf("expenseSourceURL() = %q, want trimmed URL", url)
+	}
+
+	if _, err := expenseSourceURL(" \t\n", "MP contract expense"); err == nil {
+		t.Fatal("expenseSourceURL() error = nil, want missing source URL error")
+	}
+}
+
 func TestPersonLockIdentityContainsNoNULByte(t *testing.T) {
 	identity := strings.ToLower("Ada") + "\x1f" + strings.ToLower("Lovelace")
 	if strings.ContainsRune(identity, '\x00') {

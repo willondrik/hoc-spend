@@ -119,14 +119,17 @@ type MP struct {
 type MPExpenses struct {
 	Totals ExpenseTotals
 
-	ContractExpenses    []*ContractExpense
-	ContractExpensesURL string
+	ContractExpenses       []*ContractExpense
+	ContractExpensesURL    string
+	ContractExpensesCSVURL string
 
-	HospitalityExpenses    []*HospitalityExpense
-	HospitalityExpensesURL string
+	HospitalityExpenses       []*HospitalityExpense
+	HospitalityExpensesURL    string
+	HospitalityExpensesCSVURL string
 
-	TravelExpenses    []*TravelExpense
-	TravelExpensesURL string
+	TravelExpenses       []*TravelExpense
+	TravelExpensesURL    string
+	TravelExpensesCSVURL string
 }
 
 type MPExpenseResults struct {
@@ -276,6 +279,7 @@ type AdminReport struct {
 
 type AdminTravelExpenseCollection struct {
 	URL     string
+	CSVURL  string
 	Entries []AdminTravelExpense
 }
 
@@ -302,6 +306,7 @@ type AdminTravelExpenseBreakdown struct {
 
 type AdminHospitalityExpenseCollection struct {
 	URL     string
+	CSVURL  string
 	Entries []AdminHospitalityExpense
 }
 
@@ -324,6 +329,7 @@ type AdminHospitalityExpense struct {
 
 type AdminContractExpenseCollection struct {
 	URL     string
+	CSVURL  string
 	Entries []AdminContractExpense
 }
 
@@ -369,14 +375,17 @@ type Officer struct {
 type OfficerExpenses struct {
 	Totals ExpenseTotals
 
-	ContractExpenses    []OfficerContractExpense
-	ContractExpensesURL string
+	ContractExpenses       []OfficerContractExpense
+	ContractExpensesURL    string
+	ContractExpensesCSVURL string
 
-	HospitalityExpenses    []OfficerHospitalityExpense
-	HospitalityExpensesURL string
+	HospitalityExpenses       []OfficerHospitalityExpense
+	HospitalityExpensesURL    string
+	HospitalityExpensesCSVURL string
 
-	TravelExpenses    []OfficerTravelExpense
-	TravelExpensesURL string
+	TravelExpenses       []OfficerTravelExpense
+	TravelExpensesURL    string
+	TravelExpensesCSVURL string
 }
 
 // ============================================================

@@ -25,11 +25,11 @@ func TestAdministrationReportFetchesAndParsesAllCategoriesWithRetry(t *testing.T
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			}
-			_, _ = w.Write([]byte(`<table class="table contracts table-striped" summary="Contracts"><tbody><tr><td>Supplier</td><td>Description</td><td>From April 1, 2026 to June 30, 2026</td><td>$10.00</td><td>$11.00</td></tr></tbody></table>`))
+			_, _ = w.Write([]byte(`<a class="csv-btn view-report-link" href="/downloads/contracts.csv">CSV</a><table class="table contracts table-striped" summary="Contracts"><tbody><tr><td>Supplier</td><td>Description</td><td>From April 1, 2026 to June 30, 2026</td><td>$10.00</td><td>$11.00</td></tr></tbody></table>`))
 		case "/hospitality":
-			_, _ = w.Write([]byte(`<table class="table expenses table-striped" summary="Hospitality Events"><tbody><tr><td>E-1</td><td>Host</td><td>Purpose</td><td>April 1, 2026</td><td>$12.00</td></tr><tr><td><p aria-labelledby="TotalAttendees">2</p></td></tr></tbody></table>`))
+			_, _ = w.Write([]byte(`<a class="csv-btn view-report-link" href="/downloads/hospitality.csv">CSV</a><table class="table expenses table-striped" summary="Hospitality Events"><tbody><tr><td>E-1</td><td>Host</td><td>Purpose</td><td>April 1, 2026</td><td>$12.00</td></tr><tr><td><p aria-labelledby="TotalAttendees">2</p></td></tr></tbody></table>`))
 		case "/travel":
-			_, _ = w.Write([]byte(`<table class="table expenses table-striped" summary="Travel Events"><tbody><tr><td>T-1</td><td>Jane Doe</td><td>Purpose</td><td>From April 1, 2026 to April 2, 2026</td><td>$13.00</td></tr><tr><td><p aria-labelledby="PlacesVisited">Ottawa</p><p aria-labelledby="Transportation">$4.00</p><p aria-labelledby="Accommodations">$3.00</p><p aria-labelledby="MealsAndIncidentals">$2.00</p><p aria-labelledby="Other">$4.00</p></td></tr></tbody></table>`))
+			_, _ = w.Write([]byte(`<a class="csv-btn view-report-link" href="/downloads/travel.csv">CSV</a><table class="table expenses table-striped" summary="Travel Events"><tbody><tr><td>T-1</td><td>Jane Doe</td><td>Purpose</td><td>From April 1, 2026 to April 2, 2026</td><td>$13.00</td></tr><tr><td><p aria-labelledby="PlacesVisited">Ottawa</p><p aria-labelledby="Transportation">$4.00</p><p aria-labelledby="Accommodations">$3.00</p><p aria-labelledby="MealsAndIncidentals">$2.00</p><p aria-labelledby="Other">$4.00</p></td></tr></tbody></table>`))
 		default:
 			http.NotFound(w, request)
 		}
@@ -46,6 +46,9 @@ func TestAdministrationReportFetchesAndParsesAllCategoriesWithRetry(t *testing.T
 	}
 	if len(report.Contract.Entries) != 1 || len(report.Hospitality.Entries) != 1 || len(report.Travel.Entries) != 1 {
 		t.Fatalf("parsed category counts = contracts:%d hospitality:%d travel:%d, want one each", len(report.Contract.Entries), len(report.Hospitality.Entries), len(report.Travel.Entries))
+	}
+	if report.Contract.CSVURL != "https://www.ourcommons.ca/downloads/contracts.csv" || report.Hospitality.CSVURL != "https://www.ourcommons.ca/downloads/hospitality.csv" || report.Travel.CSVURL != "https://www.ourcommons.ca/downloads/travel.csv" {
+		t.Fatalf("CSV URLs = contract:%q hospitality:%q travel:%q, want House of Commons CSV download URLs", report.Contract.CSVURL, report.Hospitality.CSVURL, report.Travel.CSVURL)
 	}
 }
 

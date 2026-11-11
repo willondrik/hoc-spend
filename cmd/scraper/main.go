@@ -326,45 +326,48 @@ func mpExpenses(service *extract.ExtractSvc, summary types.MPExpenseSummary) (ty
 	}
 	defer closeResponseBodies(responses)
 
-	contracts, err := mpResponseCategory(responses.Contract, transform.MpContractExpenses)
+	contracts, contractCSVURL, err := mpResponseCategory(responses.Contract, transform.MpContractExpenses)
 	if err != nil {
 		return types.MPExpenses{}, fmt.Errorf("contracts: %w", err)
 	}
-	hospitality, err := mpResponseCategory(responses.Hospitality, transform.MpHospitalityExpenses)
+	hospitality, hospitalityCSVURL, err := mpResponseCategory(responses.Hospitality, transform.MpHospitalityExpenses)
 	if err != nil {
 		return types.MPExpenses{}, fmt.Errorf("hospitality: %w", err)
 	}
-	travel, err := mpResponseCategory(responses.Travel, transform.MpTravelExpenses)
+	travel, travelCSVURL, err := mpResponseCategory(responses.Travel, transform.MpTravelExpenses)
 	if err != nil {
 		return types.MPExpenses{}, fmt.Errorf("travel: %w", err)
 	}
 	return types.MPExpenses{
-		Totals:                 types.ExpenseTotals{Salaries: summary.Salaries, Contract: summary.ContractExpenses.TotalAmount, Hospitality: summary.HospitalityExpenses.TotalAmount, Travel: summary.TravelExpenses.TotalAmount},
-		ContractExpenses:       contracts,
-		ContractExpensesURL:    strings.TrimSpace(summary.ContractExpenses.URL),
-		HospitalityExpenses:    hospitality,
-		HospitalityExpensesURL: strings.TrimSpace(summary.HospitalityExpenses.URL),
-		TravelExpenses:         travel,
-		TravelExpensesURL:      strings.TrimSpace(summary.TravelExpenses.URL),
+		Totals:                    types.ExpenseTotals{Salaries: summary.Salaries, Contract: summary.ContractExpenses.TotalAmount, Hospitality: summary.HospitalityExpenses.TotalAmount, Travel: summary.TravelExpenses.TotalAmount},
+		ContractExpenses:          contracts,
+		ContractExpensesURL:       strings.TrimSpace(summary.ContractExpenses.URL),
+		ContractExpensesCSVURL:    contractCSVURL,
+		HospitalityExpenses:       hospitality,
+		HospitalityExpensesURL:    strings.TrimSpace(summary.HospitalityExpenses.URL),
+		HospitalityExpensesCSVURL: hospitalityCSVURL,
+		TravelExpenses:            travel,
+		TravelExpensesURL:         strings.TrimSpace(summary.TravelExpenses.URL),
+		TravelExpensesCSVURL:      travelCSVURL,
 	}, nil
 }
 
-func mpResponseCategory[T any](response *http.Response, parse func(*goquery.Document) ([]T, error)) ([]T, error) {
+func mpResponseCategory[T any](response *http.Response, parse func(*goquery.Document) ([]T, error)) ([]T, string, error) {
 	if response == nil {
-		return []T{}, nil
+		return []T{}, "", nil
 	}
 	doc, err := goquery.NewDocumentFromReader(response.Body)
 	if err != nil {
-		return nil, fmt.Errorf("parse page: %w", err)
+		return nil, "", fmt.Errorf("parse page: %w", err)
 	}
 	entries, err := parse(doc)
 	if err != nil {
-		return nil, fmt.Errorf("transform page: %w", err)
+		return nil, "", fmt.Errorf("transform page: %w", err)
 	}
 	if entries == nil {
-		return []T{}, nil
+		return []T{}, transform.CSVDownloadURL(doc), nil
 	}
-	return entries, nil
+	return entries, transform.CSVDownloadURL(doc), nil
 }
 
 func mpProfilesFromSubjects(subjects []load.MPReportSubject) []*types.MPDetails {
@@ -472,57 +475,66 @@ func officerExpenses(service *extract.ExtractSvc, summary types.OfficerExpenseSu
 	travelURL := strings.TrimSpace(summary.TravelExpenses.URL)
 
 	var contracts []types.OfficerContractExpense
+	var contractCSVURL string
 	if contractURL != "" {
-		entries, err := officerCategory(service, contractURL, transform.OfficerContractExpenses)
+		entries, csvURL, err := officerCategory(service, contractURL, transform.OfficerContractExpenses)
 		if err != nil {
 			return types.OfficerExpenses{}, fmt.Errorf("contracts: %w", err)
 		}
 		contracts = entries
+		contractCSVURL = csvURL
 	}
 	var hospitality []types.OfficerHospitalityExpense
+	var hospitalityCSVURL string
 	if hospitalityURL != "" {
-		entries, err := officerCategory(service, hospitalityURL, transform.OfficerHospitalityExpenses)
+		entries, csvURL, err := officerCategory(service, hospitalityURL, transform.OfficerHospitalityExpenses)
 		if err != nil {
 			return types.OfficerExpenses{}, fmt.Errorf("hospitality: %w", err)
 		}
 		hospitality = entries
+		hospitalityCSVURL = csvURL
 	}
 	var travel []types.OfficerTravelExpense
+	var travelCSVURL string
 	if travelURL != "" {
-		entries, err := officerCategory(service, travelURL, transform.OfficerTravelExpenses)
+		entries, csvURL, err := officerCategory(service, travelURL, transform.OfficerTravelExpenses)
 		if err != nil {
 			return types.OfficerExpenses{}, fmt.Errorf("travel: %w", err)
 		}
 		travel = entries
+		travelCSVURL = csvURL
 	}
 	return types.OfficerExpenses{
-		ContractExpenses:       contracts,
-		ContractExpensesURL:    contractURL,
-		HospitalityExpenses:    hospitality,
-		HospitalityExpensesURL: hospitalityURL,
-		TravelExpenses:         travel,
-		TravelExpensesURL:      travelURL,
+		ContractExpenses:          contracts,
+		ContractExpensesURL:       contractURL,
+		ContractExpensesCSVURL:    contractCSVURL,
+		HospitalityExpenses:       hospitality,
+		HospitalityExpensesURL:    hospitalityURL,
+		HospitalityExpensesCSVURL: hospitalityCSVURL,
+		TravelExpenses:            travel,
+		TravelExpensesURL:         travelURL,
+		TravelExpensesCSVURL:      travelCSVURL,
 	}, nil
 }
 
-func officerCategory[T any](service *extract.ExtractSvc, sourceURL string, parse func(*goquery.Document) ([]T, error)) ([]T, error) {
+func officerCategory[T any](service *extract.ExtractSvc, sourceURL string, parse func(*goquery.Document) ([]T, error)) ([]T, string, error) {
 	response, err := service.GetByURL(sourceURL)
 	if err != nil {
-		return nil, fmt.Errorf("fetch page: %w", err)
+		return nil, "", fmt.Errorf("fetch page: %w", err)
 	}
 	doc, parseErr := goquery.NewDocumentFromReader(response.Body)
 	closeErr := response.Body.Close()
 	if parseErr != nil {
-		return nil, fmt.Errorf("parse page: %w", parseErr)
+		return nil, "", fmt.Errorf("parse page: %w", parseErr)
 	}
 	if closeErr != nil {
-		return nil, fmt.Errorf("close page: %w", closeErr)
+		return nil, "", fmt.Errorf("close page: %w", closeErr)
 	}
 	entries, err := parse(doc)
 	if err != nil {
-		return nil, fmt.Errorf("transform page: %w", err)
+		return nil, "", fmt.Errorf("transform page: %w", err)
 	}
-	return entries, nil
+	return entries, transform.CSVDownloadURL(doc), nil
 }
 
 func filterFiscalPeriod(reports []types.ExpenditureReport, fiscalYear, fiscalQuarter int) []types.ExpenditureReport {
@@ -596,9 +608,9 @@ func administrationReport(service *extract.ExtractSvc, report types.ExpenditureR
 
 	return types.AdminReport{
 		Report:      report,
-		Contract:    types.AdminContractExpenseCollection{URL: urls.Contract, Entries: contracts},
-		Hospitality: types.AdminHospitalityExpenseCollection{URL: urls.Hospitality, Entries: hospitality},
-		Travel:      types.AdminTravelExpenseCollection{URL: urls.Travel, Entries: travel},
+		Contract:    types.AdminContractExpenseCollection{URL: urls.Contract, CSVURL: transform.CSVDownloadURL(contractDoc), Entries: contracts},
+		Hospitality: types.AdminHospitalityExpenseCollection{URL: urls.Hospitality, CSVURL: transform.CSVDownloadURL(hospitalityDoc), Entries: hospitality},
+		Travel:      types.AdminTravelExpenseCollection{URL: urls.Travel, CSVURL: transform.CSVDownloadURL(travelDoc), Entries: travel},
 	}, nil
 }
 

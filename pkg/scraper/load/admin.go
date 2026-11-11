@@ -42,6 +42,10 @@ func (l *Loader) LoadAdministrationReport(ctx context.Context, report types.Admi
 		return DetailLoadResult{}, fmt.Errorf("store administration report source URLs: %w", err)
 	}
 	contractOccurrences := make(map[string]int, len(report.Contract.Entries))
+	contractURL, err := expenseSourceURL(report.Contract.URL, "administration contract expense")
+	if err != nil && len(report.Contract.Entries) > 0 {
+		return DetailLoadResult{}, err
+	}
 	for _, expense := range report.Contract.Entries {
 		baseKey, err := sourceKey("administration-contract", expense)
 		if err != nil {
@@ -52,20 +56,28 @@ func (l *Loader) LoadAdministrationReport(ctx context.Context, report types.Admi
 		if err != nil {
 			return DetailLoadResult{}, fmt.Errorf("create administration contract occurrence key: %w", err)
 		}
-		loaded, err := loadAdministrationContract(ctx, tx, reportID, expense, key)
+		loaded, err := loadAdministrationContract(ctx, tx, reportID, contractURL, expense, key)
 		if err != nil {
 			return DetailLoadResult{}, err
 		}
 		counts.add(loaded)
 	}
+	hospitalityURL, err := expenseSourceURL(report.Hospitality.URL, "administration hospitality expense")
+	if err != nil && len(report.Hospitality.Entries) > 0 {
+		return DetailLoadResult{}, err
+	}
 	for _, expense := range report.Hospitality.Entries {
-		loaded, err := loadAdministrationHospitality(ctx, tx, reportID, expense)
+		loaded, err := loadAdministrationHospitality(ctx, tx, reportID, hospitalityURL, expense)
 		if err != nil {
 			return DetailLoadResult{}, err
 		}
 		counts.add(loaded)
 	}
 	travelOccurrences := make(map[string]int, len(report.Travel.Entries))
+	travelURL, err := expenseSourceURL(report.Travel.URL, "administration travel expense")
+	if err != nil && len(report.Travel.Entries) > 0 {
+		return DetailLoadResult{}, err
+	}
 	for _, expense := range report.Travel.Entries {
 		baseKey, err := sourceKey("administration-travel", expense)
 		if err != nil {
@@ -76,7 +88,7 @@ func (l *Loader) LoadAdministrationReport(ctx context.Context, report types.Admi
 		if err != nil {
 			return DetailLoadResult{}, fmt.Errorf("create administration travel occurrence key: %w", err)
 		}
-		loaded, err := loadAdministrationTravel(ctx, tx, reportID, expense, key)
+		loaded, err := loadAdministrationTravel(ctx, tx, reportID, travelURL, expense, key)
 		if err != nil {
 			return DetailLoadResult{}, err
 		}
@@ -98,23 +110,28 @@ UPDATE disclosure_reports
 SET
     travel_source_url = COALESCE(NULLIF(travel_source_url, ''), NULLIF($2, '')),
     hospitality_source_url = COALESCE(NULLIF(hospitality_source_url, ''), NULLIF($3, '')),
-    contract_source_url = COALESCE(NULLIF(contract_source_url, ''), NULLIF($4, ''))
+    contract_source_url = COALESCE(NULLIF(contract_source_url, ''), NULLIF($4, '')),
+    travel_csv_url = COALESCE(NULLIF($5, ''), travel_csv_url),
+    hospitality_csv_url = COALESCE(NULLIF($6, ''), hospitality_csv_url),
+    contract_csv_url = COALESCE(NULLIF($7, ''), contract_csv_url)
 WHERE id = $1`, reportID,
-		sourceText(report.Travel.URL), sourceText(report.Hospitality.URL), sourceText(report.Contract.URL))
+		sourceText(report.Travel.URL), sourceText(report.Hospitality.URL), sourceText(report.Contract.URL),
+		sourceText(report.Travel.CSVURL), sourceText(report.Hospitality.CSVURL), sourceText(report.Contract.CSVURL))
 	if err != nil {
 		return fmt.Errorf("update report: %w", err)
 	}
 	return nil
 }
 
-func loadAdministrationContract(ctx context.Context, tx pgx.Tx, reportID int64, expense types.AdminContractExpense, key string) (loadCounts, error) {
+func loadAdministrationContract(ctx context.Context, tx pgx.Tx, reportID int64, sourceURL string, expense types.AdminContractExpense, key string) (loadCounts, error) {
 	start, end, sourceStart, sourceEnd := sourceDateRange(expense.ContractPeriod)
 	description := sourceText(expense.Description)
 	id, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO administration_contract_expenses (report_id, source_key, description, category, period_start, period_end, source_period_start, source_period_end, original_contract_value, amended_contract_value)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO administration_contract_expenses (report_id, source_key, source_url, description, category, period_start, period_end, source_period_start, source_period_end, original_contract_value, amended_contract_value)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (report_id, source_key) DO NOTHING RETURNING id`,
-		`SELECT id FROM administration_contract_expenses WHERE report_id = $1 AND source_key = $2`, reportID, key, description, contractCategory(description), start, end, sourceStart, sourceEnd, expense.OriginalContractValue, expense.AmendedContractValue)
+		`SELECT id FROM administration_contract_expenses WHERE report_id = $1 AND source_key = $2`, reportID, key,
+		sourceURL, description, contractCategory(description), start, end, sourceStart, sourceEnd, expense.OriginalContractValue, expense.AmendedContractValue)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert administration contract: %w", err)
 	}
@@ -132,17 +149,17 @@ ON CONFLICT (report_id, source_key) DO NOTHING RETURNING id`,
 	return counts, nil
 }
 
-func loadAdministrationHospitality(ctx context.Context, tx pgx.Tx, reportID int64, expense types.AdminHospitalityExpense) (loadCounts, error) {
+func loadAdministrationHospitality(ctx context.Context, tx pgx.Tx, reportID int64, sourceURL string, expense types.AdminHospitalityExpense) (loadCounts, error) {
 	eventID := sourceText(expense.EventID)
 	if eventID == "" {
 		return loadCounts{}, fmt.Errorf("administration hospitality event ID is required")
 	}
 	date, rawDate := sourceDate(expense.Date)
 	id, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO administration_hospitality_expenses (report_id, event_id, host, purpose, expense_date, source_date, total_cost, cost_per_person, location, attendance)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO administration_hospitality_expenses (report_id, event_id, source_url, host, purpose, expense_date, source_date, total_cost, cost_per_person, location, attendance)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (report_id, event_id) DO NOTHING RETURNING id`,
-		`SELECT id FROM administration_hospitality_expenses WHERE report_id = $1 AND event_id = $2`, reportID, eventID, sourceText(expense.Host), sourceText(expense.Purpose), date, rawDate, expense.TotalCost, expense.CostPerPerson, sourceText(expense.Location), sourceText(expense.Attendance))
+		`SELECT id FROM administration_hospitality_expenses WHERE report_id = $1 AND event_id = $2`, reportID, eventID, sourceURL, sourceText(expense.Host), sourceText(expense.Purpose), date, rawDate, expense.TotalCost, expense.CostPerPerson, sourceText(expense.Location), sourceText(expense.Attendance))
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert administration hospitality: %w", err)
 	}
@@ -160,7 +177,7 @@ ON CONFLICT (report_id, event_id) DO NOTHING RETURNING id`,
 	return counts, nil
 }
 
-func loadAdministrationTravel(ctx context.Context, tx pgx.Tx, reportID int64, expense types.AdminTravelExpense, key string) (loadCounts, error) {
+func loadAdministrationTravel(ctx context.Context, tx pgx.Tx, reportID int64, sourceURL string, expense types.AdminTravelExpense, key string) (loadCounts, error) {
 	eventID := sourceText(expense.EventID)
 	if eventID == "" {
 		return loadCounts{}, fmt.Errorf("administration travel event ID is required")
@@ -171,10 +188,10 @@ func loadAdministrationTravel(ctx context.Context, tx pgx.Tx, reportID int64, ex
 	}
 	start, end, sourceStart, sourceEnd := sourceDateRange(expense.DateRange)
 	id, inserted, err := insertOrFindID(ctx, tx, `
-INSERT INTO administration_travel_expenses (report_id, source_key, event_id, traveller_person_id, purpose, period_start, period_end, source_period_start, source_period_end, total_cost, transportation_cost, accommodations_cost, meals_and_incidentals_cost, other_cost)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+INSERT INTO administration_travel_expenses (report_id, source_key, event_id, source_url, traveller_person_id, purpose, period_start, period_end, source_period_start, source_period_end, total_cost, transportation_cost, accommodations_cost, meals_and_incidentals_cost, other_cost)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 ON CONFLICT (report_id, source_key) DO NOTHING RETURNING id`,
-		`SELECT id FROM administration_travel_expenses WHERE report_id = $1 AND source_key = $2`, reportID, key, eventID, travellerID, sourceText(expense.Purpose), start, end, sourceStart, sourceEnd, expense.TotalCost, expense.ExpenseBreakdown.Transportation, expense.ExpenseBreakdown.Accommodations, expense.ExpenseBreakdown.MealsAndIncidentals, expense.ExpenseBreakdown.Other)
+		`SELECT id FROM administration_travel_expenses WHERE report_id = $1 AND source_key = $2`, reportID, key, eventID, sourceURL, travellerID, sourceText(expense.Purpose), start, end, sourceStart, sourceEnd, expense.TotalCost, expense.ExpenseBreakdown.Transportation, expense.ExpenseBreakdown.Accommodations, expense.ExpenseBreakdown.MealsAndIncidentals, expense.ExpenseBreakdown.Other)
 	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert administration travel: %w", err)
 	}

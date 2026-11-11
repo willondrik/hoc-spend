@@ -60,6 +60,14 @@ func sourceText(value string) string {
 	return strings.TrimSpace(value)
 }
 
+func expenseSourceURL(value, expenseType string) (string, error) {
+	url := sourceText(value)
+	if url == "" {
+		return "", fmt.Errorf("%s source URL is required", expenseType)
+	}
+	return url, nil
+}
+
 func sourceDate(value string) (*time.Time, string) {
 	raw := sourceText(value)
 	if raw == "" || strings.EqualFold(raw, "not provided") || strings.EqualFold(raw, "n/a") {
