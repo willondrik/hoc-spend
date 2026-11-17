@@ -70,14 +70,16 @@ CREATE TABLE IF NOT EXISTS mps (
     CONSTRAINT mps_source_identity_key UNIQUE (source_identity)
 );
 
--- An MP affiliation records the caucus and riding associated with one or more
--- quarterly disclosures. It preserves historic spending context while mps
--- remains the durable identity and owner of the current profile.
+-- An MP affiliation records the caucus, riding, and province/territory
+-- associated with one or more quarterly disclosures. It preserves historic
+-- spending context while mps remains the durable identity and owner of the
+-- current profile.
 CREATE TABLE IF NOT EXISTS mp_affiliations (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     mp_id BIGINT NOT NULL REFERENCES mps(id) ON DELETE RESTRICT,
     constituency TEXT NOT NULL DEFAULT '',
     caucus TEXT NOT NULL DEFAULT '',
+    province TEXT,
     effective_from DATE,
     effective_to DATE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -128,7 +130,7 @@ CREATE TABLE IF NOT EXISTS mp_contract_expenses (
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
-        'information_technology', 'communications', 'professional_services',
+        'information_technology', 'advertising', 'communications', 'professional_services',
         'office_and_equipment', 'facilities', 'printing_and_translation',
         'training_and_events', 'travel', 'other'
     )),
@@ -223,7 +225,7 @@ CREATE TABLE IF NOT EXISTS administration_contract_expenses (
     source_url TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
-        'information_technology', 'communications', 'professional_services',
+        'information_technology', 'advertising', 'communications', 'professional_services',
         'office_and_equipment', 'facilities', 'printing_and_translation',
         'training_and_events', 'travel', 'other'
     )),
@@ -311,7 +313,7 @@ CREATE TABLE IF NOT EXISTS officer_contract_expenses (
     supplier TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN (
-        'information_technology', 'communications', 'professional_services',
+        'information_technology', 'advertising', 'communications', 'professional_services',
         'office_and_equipment', 'facilities', 'printing_and_translation',
         'training_and_events', 'travel', 'other'
     )),
@@ -380,6 +382,7 @@ CREATE TABLE IF NOT EXISTS officer_travel_places (
 CREATE INDEX IF NOT EXISTS disclosure_reports_domain_period_idx
     ON disclosure_reports (domain, fiscal_year DESC, fiscal_quarter DESC);
 CREATE INDEX IF NOT EXISTS mp_affiliations_mp_idx ON mp_affiliations (mp_id);
+CREATE INDEX IF NOT EXISTS mp_affiliations_province_idx ON mp_affiliations (province);
 CREATE INDEX IF NOT EXISTS report_subjects_report_idx ON report_subjects (report_id);
 CREATE INDEX IF NOT EXISTS report_subjects_person_idx ON report_subjects (person_id);
 CREATE INDEX IF NOT EXISTS report_subjects_mp_affiliation_idx ON report_subjects (mp_affiliation_id);

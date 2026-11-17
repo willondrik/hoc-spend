@@ -14,6 +14,7 @@ import (
 // before report details are persisted.
 type MPReportSubject struct {
 	SourceIdentity string
+	Province       string
 	Summary        types.MPExpenseSummary
 	Expenses       types.MPExpenses
 }
@@ -89,6 +90,10 @@ func loadMPSubject(ctx context.Context, tx pgx.Tx, reportID int64, subject MPRep
 	if sourceIdentity == "" {
 		return loadCounts{}, fmt.Errorf("MP report subject source identity is required")
 	}
+	province := sourceText(subject.Province)
+	if province == "" {
+		return loadCounts{}, fmt.Errorf("MP report subject province is required for constituency %q", sourceText(subject.Summary.Constituency))
+	}
 	var mpID int64
 	if err := tx.QueryRow(ctx, `SELECT id FROM mps WHERE source_identity = $1`, sourceIdentity).Scan(&mpID); err != nil {
 		if err == pgx.ErrNoRows {
@@ -99,22 +104,19 @@ func loadMPSubject(ctx context.Context, tx pgx.Tx, reportID int64, subject MPRep
 
 	start, end, _, _ := sourceDateRange(subject.Summary.ReportingPeriod)
 	var affiliationID int64
+	var affiliationInserted bool
 	err := tx.QueryRow(ctx, `
-INSERT INTO mp_affiliations (mp_id, constituency, caucus, effective_from, effective_to)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (mp_id, constituency, caucus) DO NOTHING RETURNING id`,
-		mpID, sourceText(subject.Summary.Constituency), sourceText(subject.Summary.Caucus), start, end).Scan(&affiliationID)
-	affiliationInserted := err == nil
-	if err != nil && err != pgx.ErrNoRows {
+	INSERT INTO mp_affiliations (mp_id, constituency, caucus, province, effective_from, effective_to)
+	VALUES ($1, $2, $3, $4, $5, $6)
+	ON CONFLICT (mp_id, constituency, caucus) DO UPDATE SET
+	    province = EXCLUDED.province,
+	    effective_from = COALESCE(mp_affiliations.effective_from, EXCLUDED.effective_from),
+	    effective_to = COALESCE(EXCLUDED.effective_to, mp_affiliations.effective_to),
+	    updated_at = CURRENT_TIMESTAMP
+	RETURNING id, (xmax = 0)`,
+		mpID, sourceText(subject.Summary.Constituency), sourceText(subject.Summary.Caucus), province, start, end).Scan(&affiliationID, &affiliationInserted)
+	if err != nil {
 		return loadCounts{}, fmt.Errorf("insert MP affiliation: %w", err)
-	}
-	if !affiliationInserted {
-		if err := tx.QueryRow(ctx, `
-SELECT id FROM mp_affiliations
-WHERE mp_id = $1 AND constituency = $2 AND caucus = $3`,
-			mpID, sourceText(subject.Summary.Constituency), sourceText(subject.Summary.Caucus)).Scan(&affiliationID); err != nil {
-			return loadCounts{}, fmt.Errorf("find existing MP affiliation: %w", err)
-		}
 	}
 	var subjectID int64
 	var subjectInserted bool

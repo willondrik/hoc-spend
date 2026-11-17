@@ -50,7 +50,8 @@ The scraper depends on the markup published by `ourcommons.ca`; markup or disclo
 ```text
 cmd/scraper/                  Placeholder command package; no runnable CLI yet
 db/001_initial_schema.sql     psql bootstrap that creates the hoc_spend database and its schema
-docs/frontend-data-contract.md Client-facing serialized API-shape contract
+ docs/database-schema.md       PostgreSQL tables, relationships, views, and loading semantics
+ docs/frontend-data-contract.md Client-facing serialized API-shape contract
 pkg/scraper/extract/          House of Commons HTTP source endpoints and concurrent MP detail retrieval
 pkg/scraper/requests/         HTTP client, timeout, retry, and response-status handling
 pkg/scraper/transform/        HTML-to-domain-model parsers for MPs, administration, and officers
@@ -64,11 +65,21 @@ The PostgreSQL bootstrap separates generic named participants from durable MP
 records. `people` stores source names and is used for travellers and officers;
 `mps` has a one-to-one link to `people` and owns the latest MP-only profile
 enrichment (profile URL, avatar, contact details, offices, and roles).
-`mp_affiliations` records each MP's historical riding and caucus combination,
-uniquely keyed by MP, riding, and caucus. MP quarterly `report_subjects` rows
-reference an affiliation, so every expense remains attributable to one MP while
-also retaining the riding and caucus in effect for that disclosure. Officer
-subjects and all traveller references continue to use `people`.
+`mp_affiliations` records each MP's historical riding, province/territory, and
+caucus combination, uniquely keyed by MP, riding, and caucus. MP quarterly
+`report_subjects` rows reference an affiliation, so every expense remains
+attributable to one MP while also retaining the riding, province/territory, and
+caucus in effect for that disclosure. Province/territory is resolved from the
+version-controlled [`pkg/scraper/load/constituency_provinces.csv`](./pkg/scraper/load/constituency_provinces.csv)
+during loading; it is not inferred from optional current-MP profile enrichment.
+The loader rejects an unknown constituency so new data cannot silently lose its
+province/territory. Officer subjects and all traveller references continue to
+use `people`.
+
+For the complete table, relationship, constraint, derived-view, and ingestion
+reference, see [`docs/database-schema.md`](./docs/database-schema.md). The
+matching Mermaid entity-relationship diagram is in
+[`diff/fulldb/erd.md`](./diff/fulldb/erd.md).
 
 ## Requirements
 
@@ -213,6 +224,11 @@ and then [`db/004_add_report_subject_reconciliation.sql`](./db/004_add_report_su
 and then [`db/005_normalize_traveller_identities.sql`](./db/005_normalize_traveller_identities.sql)
 and then [`db/006_add_administration_travel_source_keys.sql`](./db/006_add_administration_travel_source_keys.sql)
 and then [`db/007_add_contract_expense_categories.sql`](./db/007_add_contract_expense_categories.sql)
+and then [`db/008_add_expense_source_urls.sql`](./db/008_add_expense_source_urls.sql)
+and then [`db/009_add_csv_download_urls.sql`](./db/009_add_csv_download_urls.sql)
+and then [`db/010_add_mp_source_identities.sql`](./db/010_add_mp_source_identities.sql)
+and then [`db/011_add_mp_affiliation_provinces.sql`](./db/011_add_mp_affiliation_provinces.sql)
+and then [`db/012_add_advertising_contract_category.sql`](./db/012_add_advertising_contract_category.sql)
 once before invoking the detail loaders. The latter adds the
 `report_subject_expense_reconciliation` view; it compares MP/Officer source
 summary totals with their individually disclosed detail-row totals. The prior
@@ -233,6 +249,11 @@ description and adds a broad normalized category for filtering and aggregation:
 `information_technology`, `communications`, `professional_services`,
 `office_and_equipment`, `facilities`, `printing_and_translation`,
 `training_and_events`, `travel`, or `other`.
+`db/012_add_advertising_contract_category.sql` adds the narrower
+`advertising` category only where the source description explicitly identifies
+advertising or publicity. It is an auditable proxy for advertising-account
+analysis, not an official House advertising-account total; broader
+`communications` and generic promotional-item descriptions are excluded.
 
 The expected client/API payloads are documented in [`docs/frontend-data-contract.md`](./docs/frontend-data-contract.md).
 

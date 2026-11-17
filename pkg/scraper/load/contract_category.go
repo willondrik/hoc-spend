@@ -4,6 +4,7 @@ import "strings"
 
 const (
 	contractCategoryInformationTechnology = "information_technology"
+	contractCategoryAdvertising           = "advertising"
 	contractCategoryCommunications        = "communications"
 	contractCategoryProfessionalServices  = "professional_services"
 	contractCategoryOfficeAndEquipment    = "office_and_equipment"
@@ -23,9 +24,13 @@ const (
 func contractCategory(description string) string {
 	description = strings.ToLower(strings.TrimSpace(description))
 
-	// More specific rules must precede broader rules. For example, a printing
-	// contract can describe promotional communications but remains printing.
+	// More specific rules must precede broader rules. Advertising is limited to
+	// explicit advertising/publicity wording; generic promotional items and
+	// communications remain outside this category because they are not reliably
+	// chargeable to the House advertising account.
 	switch {
+	case containsAny(description, "advertising", "publicity"):
+		return contractCategoryAdvertising
 	case containsAny(description, "print", "printing", "translation", "translate", "interpretation", "interpreter", "transcription"):
 		return contractCategoryPrintingTranslation
 	case containsAny(description, "software", "licence", "license", "cloud", "hosting", "website", "web site", "web development", "computer", "laptop", "tablet", "cybersecurity", "cyber security", "it support", "information technology"):

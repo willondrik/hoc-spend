@@ -325,6 +325,10 @@ func mpReportSubjects(service *extract.ExtractSvc, report types.ExpenditureRepor
 		if err != nil {
 			return nil, nil, err
 		}
+		province, found := load.ProvinceForConstituency(summary.Constituency)
+		if !found {
+			return nil, nil, fmt.Errorf("resolve province for constituency %q: no configured mapping", summary.Constituency)
+		}
 		expenses, err := mpExpenses(service, *summary)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fetch %s %s details: %w", summary.Name.FirstName, summary.Name.LastName, err)
@@ -332,7 +336,7 @@ func mpReportSubjects(service *extract.ExtractSvc, report types.ExpenditureRepor
 		if (index+1)%25 == 0 || index+1 == len(summaries) {
 			fmt.Printf("  fetched MP details %d/%d\n", index+1, len(summaries))
 		}
-		subjects = append(subjects, load.MPReportSubject{SourceIdentity: identity, Summary: *summary, Expenses: expenses})
+		subjects = append(subjects, load.MPReportSubject{SourceIdentity: identity, Province: province, Summary: *summary, Expenses: expenses})
 		if _, exists := seen[identity]; !exists {
 			profiles = append(profiles, &types.MPDetails{Name: summary.Name, SourceIdentity: identity})
 			seen[identity] = struct{}{}

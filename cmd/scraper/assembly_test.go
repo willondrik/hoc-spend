@@ -82,7 +82,7 @@ func TestMPReportSubjectsFetchesAllDetails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/report":
-			_, _ = w.Write([]byte(`<table id="data-table"><tbody><tr><td>Doe, Jane</td><td>Example Riding</td><td>Example Caucus</td><td>$100.00</td><td><a href="` + serverURL(request) + `/travel">$30.00</a></td><td><a href="` + serverURL(request) + `/hospitality">$20.00</a></td><td><a href="` + serverURL(request) + `/contracts">$10.00</a></td></tr></tbody></table>`))
+			_, _ = w.Write([]byte(`<table id="data-table"><tbody><tr><td>Doe, Jane</td><td>Toronto Centre</td><td>Example Caucus</td><td>$100.00</td><td><a href="` + serverURL(request) + `/travel">$30.00</a></td><td><a href="` + serverURL(request) + `/hospitality">$20.00</a></td><td><a href="` + serverURL(request) + `/contracts">$10.00</a></td></tr></tbody></table>`))
 		case "/contracts":
 			_, _ = w.Write([]byte(`<table><tbody><tr><td>Acme Corp.</td><td>Description</td><td>April 1, 2026</td><td>$10.00</td></tr></tbody></table>`))
 		case "/hospitality":
@@ -106,6 +106,9 @@ func TestMPReportSubjectsFetchesAllDetails(t *testing.T) {
 	subject := subjects[0]
 	if subject.SourceIdentity != profiles[0].SourceIdentity || !strings.HasPrefix(subject.SourceIdentity, "source://ourcommons.ca/proactivedisclosure/mp/") {
 		t.Fatalf("unexpected source identity: subject=%q profile=%q", subject.SourceIdentity, profiles[0].SourceIdentity)
+	}
+	if subject.Province != "Ontario" {
+		t.Fatalf("subject province = %q, want Ontario", subject.Province)
 	}
 	if len(subject.Expenses.ContractExpenses) != 1 || len(subject.Expenses.HospitalityExpenses) != 1 || len(subject.Expenses.TravelExpenses) != 1 {
 		t.Fatalf("detail counts = contracts:%d hospitality:%d travel:%d, want 1 each", len(subject.Expenses.ContractExpenses), len(subject.Expenses.HospitalityExpenses), len(subject.Expenses.TravelExpenses))

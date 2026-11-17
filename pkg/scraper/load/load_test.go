@@ -53,6 +53,30 @@ func TestFilterNewMPProfiles(t *testing.T) {
 	}
 }
 
+func TestProvinceForConstituency(t *testing.T) {
+	tests := []struct {
+		name         string
+		constituency string
+		wantProvince string
+		wantFound    bool
+	}{
+		{name: "current riding", constituency: "  Gaspésie—Les Îles-de-la-Madeleine—Listuguj ", wantProvince: "Quebec", wantFound: true},
+		{name: "dash and apostrophe variant", constituency: "Taiaiako'n–Parkdale–High Park", wantProvince: "Ontario", wantFound: true},
+		{name: "transition riding", constituency: "Spadina—Fort York", wantProvince: "Ontario", wantFound: true},
+		{name: "source spelling alias", constituency: "Ville-Marie—Le Sud-Ouest—Île-des-Soeurs", wantProvince: "Quebec", wantFound: true},
+		{name: "unknown riding", constituency: "Example Riding", wantFound: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gotProvince, gotFound := ProvinceForConstituency(test.constituency)
+			if gotProvince != test.wantProvince || gotFound != test.wantFound {
+				t.Fatalf("ProvinceForConstituency(%q) = (%q, %t), want (%q, %t)", test.constituency, gotProvince, gotFound, test.wantProvince, test.wantFound)
+			}
+		})
+	}
+}
+
 func TestUniqueReports(t *testing.T) {
 	reports := []types.ExpenditureReport{
 		{FiscalYear: 2025, FiscalQuarter: 1, URL: " https://example.test/q1 "},

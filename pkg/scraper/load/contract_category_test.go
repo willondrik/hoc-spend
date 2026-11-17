@@ -10,6 +10,9 @@ func TestContractCategory(t *testing.T) {
 	}{
 		{name: "information technology", description: "Cloud software licence renewal", want: contractCategoryInformationTechnology},
 		{name: "case and whitespace normalization", description: "  SOFTWARE LICENSE RENEWAL  ", want: contractCategoryInformationTechnology},
+		{name: "advertising", description: "Commercial and social media advertising", want: contractCategoryAdvertising},
+		{name: "publicity before printing", description: "Publicity printing purchase", want: contractCategoryAdvertising},
+		{name: "promotional items are not advertising", description: "Promotional items", want: contractCategoryOther},
 		{name: "communications", description: "Social media video production", want: contractCategoryCommunications},
 		{name: "professional services", description: "Legal consulting services", want: contractCategoryProfessionalServices},
 		{name: "office and equipment", description: "Office supplies and stationery", want: contractCategoryOfficeAndEquipment},

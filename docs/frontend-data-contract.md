@@ -120,6 +120,7 @@ interface ContractExpense {
 
 type ContractExpenseCategory =
   | "information_technology"
+  | "advertising"
   | "communications"
   | "professional_services"
   | "office_and_equipment"
